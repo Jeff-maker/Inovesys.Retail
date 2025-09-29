@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Inovesys.Retail.Pages.SettingsPage"
+             Title="Configurações">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="15">
+
+            <Label Text="Usuário" FontAttributes="Bold" />
+            <Entry x:Name="entryUser" Placeholder="Usuário" Keyboard="Email" />
+
+            <Label Text="Planta padrão para venda" FontAttributes="Bold" />
+            <Picker x:Name="pickerDefaultPlant"
+                    Title="Selecione a planta"
+                    ItemDisplayBinding="{Binding Display}" />
+
+            <Label Text="Série do PDV" FontAttributes="Bold" />
+            <HorizontalStackLayout Spacing="10">
+                <Entry x:Name="entryPdvSerie"
+                       Placeholder="Informe a série (1–999)"
+                       Keyboard="Numeric"
+                       MaxLength="3"
+                       HorizontalOptions="Fill" />
+
+                <Button Text="Reservar"
+                        Clicked="OnReserveSerieClicked"
+                    BackgroundColor="DarkOliveGreen"
+                    TextColor="White" />
+            </HorizontalStackLayout>
+
+            <Label Text="Número inicial da nota fiscal" FontAttributes="Bold" />
+            <Entry x:Name="entryFirstInvoiceNumber"
+                   Placeholder="Ex: 000000001"
+                   Keyboard="Numeric"
+                   MaxLength="9" />
+
+            <!-- Impressora (Serviço 9100) -->
+            <Label Text="Impressora (Serviço 9100)" FontAttributes="Bold" />
+
+            <Label Text="Nome da impressora no Windows" />
+            <Entry x:Name="entryPrinterName"
+               Placeholder="Ex.: MP-4200 TH" />
+
+                    <Label Text="IP do serviço de impressão" />
+                    <!-- Telephone aceita números e '.' melhor que Numeric -->
+                    <Entry x:Name="entryPrinterIp"
+               Placeholder="Ex.: 127.0.0.1"
+               Keyboard="Telephone" />
+
+                    <Label Text="Porta do serviço (padrão 9100)" />
+                <Entry x:Name="entryPrinterPort"
+               Placeholder="9100"
+               Keyboard="Numeric"
+               MaxLength="5" /> 
+
+
+
+            <Button Text="Salvar Configurações"
+                    Clicked="OnSaveClicked" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

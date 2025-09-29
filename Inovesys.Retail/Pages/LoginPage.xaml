@@ -1,0 +1,27 @@
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Inovesys.Retail.Pages.LoginPage"
+             Title="Conectar">
+
+    <VerticalStackLayout Padding="30" Spacing="20">
+        <Entry x:Name="entryUser" Placeholder="Usuário" Keyboard="Email" />
+        <Entry x:Name="entryPassword" Placeholder="Senha" IsPassword="True" />
+
+        <Picker x:Name="tenantPicker"
+                Title="Selecione o ambiente"
+                IsVisible="False"
+                ItemDisplayBinding="{Binding Description}" />
+
+        <Button x:Name="btnConnect"
+                Text="Entrar"
+                Clicked="OnConnectClicked" />
+
+        <Button x:Name="btnConfirmTenant"
+                Text="Entrar"
+                Clicked="OnConfirmTenantClicked"
+                IsVisible="False" />
+
+        <ActivityIndicator x:Name="loading" IsVisible="False" IsRunning="False" />
+        <Label x:Name="lblError" TextColor="Red" IsVisible="False" />
+    </VerticalStackLayout>
+</ContentPage>

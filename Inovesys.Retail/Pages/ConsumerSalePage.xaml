@@ -1,0 +1,88 @@
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Inovesys.Retail.Pages.ConsumerSalePage"
+             xmlns:models="clr-namespace:Inovesys.Retail.Models"
+             Title="Venda Consumidor">
+
+    <Grid Padding="20" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <!-- Total -->
+            <RowDefinition Height="Auto" />
+            <!-- Código + Quantidade -->
+            <RowDefinition Height="*" />
+            <!-- Lista -->
+            <RowDefinition Height="Auto" />
+            <!-- Botões Ações -->
+            <RowDefinition Height="Auto" />
+            <!-- Botões Venda -->
+        </Grid.RowDefinitions>
+
+        <!-- Total da Venda -->
+        <Label x:Name="lblTotal"
+               Text= "Total: R$ 0,00"
+               FontSize="28"
+               FontAttributes="Bold"
+               HorizontalOptions="Center"
+               Grid.Row="0" />
+
+        <!-- Campo de Código e Quantidade -->
+        <HorizontalStackLayout Grid.Row="1" Spacing="10" HorizontalOptions="Center">
+            <Entry x:Name="entryProductCode"
+                   Placeholder="Código do produto"
+                   ReturnType="Next"
+                   WidthRequest="270"
+                   Completed="OnProductCodeEntered" />
+
+            <Entry x:Name="entryQuantity"
+                   Text="1"
+                   Keyboard="Numeric"
+                   WidthRequest="80"
+                   HorizontalTextAlignment="Center"
+                   Completed="OnProductCodeEntered"
+                   Focused="OnQuantityFocused" />
+        </HorizontalStackLayout>
+
+        <!-- Lista de Itens -->
+        <CollectionView x:Name="ItemsListView"
+                        Grid.Row="2"
+                        HeightRequest="300"
+                        SelectionMode="Single"
+                        HorizontalOptions="Center"
+                        WidthRequest="360"
+                        BackgroundColor="#FFFFE0">
+            <CollectionView.ItemTemplate>
+                <DataTemplate  x:DataType="models:ConsumerSaleItem">
+                    <Grid Padding="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Label Text="{Binding Description}" FontSize="16" />
+                        <Label Text="{Binding Quantity}" FontSize="16" Grid.Column="1" Margin="10,0" />
+                        <Label Text="{Binding Price, StringFormat='R$ {0:F2}'}"
+                               FontSize="16"
+                               Grid.Column="2"
+                               HorizontalOptions="End" />
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Botões de Ações -->
+        <HorizontalStackLayout Grid.Row="3" Spacing="10" HorizontalOptions="Center">
+            <Button Text="Cancelar Item" Clicked="OnCancelItemClicked" />
+            <Button Text="Desconto" Clicked="OnDiscountClicked" />
+        </HorizontalStackLayout>
+
+        <!-- Botões de Venda -->
+        <HorizontalStackLayout Grid.Row="4" Spacing="10" HorizontalOptions="Center">
+            <Button Text="Cancelar Venda" BackgroundColor="Red" TextColor="White"
+                    Clicked="OnCancelSaleClicked" />
+            <Button Text="Finalizar Venda" BackgroundColor="Green" TextColor="White"
+                    Clicked="OnFinalizeSaleClicked" />
+        </HorizontalStackLayout>
+    </Grid>
+</ContentPage>

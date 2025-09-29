@@ -1,0 +1,86 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<DebugType>portable</DebugType>
+
+		<!-- WinUI 3 / WinAppSDK -->
+		<TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+		<TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+		<UseWinUI>true</UseWinUI>
+
+		<!-- WinUI hospedando libs do MAUI -->
+		<UseMaui>true</UseMaui>
+		<EnableDefaultMauiItems>false</EnableDefaultMauiItems>
+
+		<RootNamespace>Inovesys.Retail.WinUI</RootNamespace>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+
+		<!-- Plataformas e RIDs -->
+		<Platforms>x64;ARM64</Platforms>
+		<RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+		<PlatformTarget>x64</PlatformTarget>
+		<!-- evita AnyCPU -->
+
+		<!-- Empacotamento MSIX -->
+		<WindowsPackageType>MSIX</WindowsPackageType>
+		<EnableMsixTooling>true</EnableMsixTooling>
+		<AppxBundle>Always</AppxBundle>
+		<AppxBundlePlatforms>x64;ARM64</AppxBundlePlatforms>
+
+		<!-- Saída -->
+		<GenerateAppInstallerFile>false</GenerateAppInstallerFile>
+		<AppxAutoIncrementPackageRevision>true</AppxAutoIncrementPackageRevision>
+		<AppxSymbolPackageEnabled>true</AppxSymbolPackageEnabled>
+		<GenerateTestArtifacts>true</GenerateTestArtifacts>
+		<AppxPackageDir>$(OutputPath)MsixContent\</AppxPackageDir>
+
+		<!-- Qualidade de vida -->
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+
+		<!-- Evita erro NETSDK1094 -->
+		<PublishReadyToRun>false</PublishReadyToRun>
+	</PropertyGroup>
+
+	<!-- 🔧 Debug: SEM assinatura -->
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+	</PropertyGroup>
+
+	<!-- 🔐 Release: COM assinatura (thumbprint) -->
+	<PropertyGroup Condition="'$(Configuration)'=='Release'">
+		<AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
+		<PackageCertificateThumbprint>85E104619C88E053BFA5539D92B3F40C9C5DE603</PackageCertificateThumbprint>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.Maui" Version="12.1.0" />
+		<PackageReference Include="LiteDB" Version="5.0.21" />
+		<PackageReference Include="Microsoft.Maui.Controls" Version="9.0.80" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.0" />
+		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250513003" />
+		<PackageReference Include="QRCoder" Version="1.6.0" />
+		<PackageReference Include="ZXing.Net.Maui" Version="0.4.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Inovesys.Retail\Inovesys.Retail.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Update="Assets\Images\*" TargetPath="%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Manifest Include="app.manifest" />
+		<Manifest Include="Package.appxmanifest" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+		<ProjectCapability Include="Msix" />
+	</ItemGroup>
+
+	<PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+		<HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+	</PropertyGroup>
+</Project>
