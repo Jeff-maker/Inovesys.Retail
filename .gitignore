@@ -11,6 +11,11 @@ obj/
 *.sln.docstates
 *.vsp
 
+
+*.zip
+*.msix
+*.msixupload
+
 ## Mono Auto Generated Files
 mono_crash.*
 
