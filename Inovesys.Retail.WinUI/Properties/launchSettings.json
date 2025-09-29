@@ -1,0 +1,17 @@
+{
+  "profiles": {
+    "Inovesys.Retail.WinUI (Unpackaged)": {
+      "commandName": "MsixPackage"
+    },
+    "Inovesys.Retail.WinUI (Packaged)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": false,
+      "nativeDebugging": false
+    },
+    "Inovesys.Retail.WinUI": {
+      "commandName": "Project",
+      "doNotLaunchApp": false,
+      "nativeDebugging": false
+    }
+  }
+}
