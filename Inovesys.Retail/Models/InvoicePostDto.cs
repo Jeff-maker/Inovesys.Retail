@@ -8,7 +8,7 @@ namespace Inovesys.Retail.Models
         public string InvoiceTypeId { get; set; } = null!;
         public string CompanyId { get; set; } = null!;
         public string BrancheId { get; set; } = null!;
-        public int CustomerId { get; set; }  // Substitua pelo tipo correto
+        public int? CustomerId { get; set; }  // Substitua pelo tipo correto
 
         [RegularExpression(@"^\d{3}$", ErrorMessage = "NFe must be a string with exactly 3 digits.")]
         public string Serie { get; set; } = null!;

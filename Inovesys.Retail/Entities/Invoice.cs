@@ -34,7 +34,7 @@ namespace Inovesys.Retail.Entities
         public string AuthorizationProtocol { get; set; }
 
         [BsonField("customer_id")]
-        public int CustomerId { get; set; }
+        public int? CustomerId { get; set; }
 
         [BsonField("nfe")]
         public string Nfe { get; set; }
@@ -63,6 +63,12 @@ namespace Inovesys.Retail.Entities
         [BsonField("qr_code")]
         public string QrCode  { get; set; }
 
+        [BsonField("printed")]
+        public bool Printed { get; set; }
+
+        [BsonField("sent")]
+        public bool Send { get; set; }
+
         [BsonField("last_change")]
         public DateTime LastChange { get; set; }
 
@@ -76,6 +82,8 @@ namespace Inovesys.Retail.Entities
 
         [BsonIgnore]
         public List<InvoicePayment> InvoicePayments { get; set; } = new();
+
+      
 
     }
 }

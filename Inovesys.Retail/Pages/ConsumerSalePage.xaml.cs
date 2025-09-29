@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Serialization;
+using static System.Net.WebRequestMethods;
 
 namespace Inovesys.Retail.Pages;
 
@@ -21,26 +22,26 @@ public partial class ConsumerSalePage : ContentPage
 
     UserConfig userConfig;
 
+
     Client _client { set; get; }
     Company _company { set; get; }
+    private readonly HttpClient _http;
 
     private Branche _branche { set; get; }
 
     // Defaults (pode ler de LiteDB/UserConfig depois)
     private const string DefaultPrinterName = "MP-4200 TH"; // nome no Windows
-    private const string DefaultPrinterHost = "127.0.0.1";
-    private const int DefaultPrinterPort = 9100;
-
-
+    
     private ToastService _toastService;
 
-    public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService)
+    public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService , IHttpClientFactory httpClientFactor)
     {
         InitializeComponent();
         ItemsListView.ItemsSource = _items;
         UpdateTotal();
         _db = liteDatabase;
         _toastService = toastService;
+        _http = httpClientFactor.CreateClient("api");
     }
 
     protected override async void OnAppearing()
@@ -122,6 +123,8 @@ public partial class ConsumerSalePage : ContentPage
             }
         }
 
+        await CheckAndSendAuthorizedInvoicesAsync();
+
         await Task.Delay(100);
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -166,8 +169,9 @@ public partial class ConsumerSalePage : ContentPage
 
             if (result.Success)
             {
-                invoice.Nfe = "AUTORIZADA";
+                invoice.NfeStatus = "AUTORIZADA";
                 invoice.Protocol = result.ProtocolXml;
+                invoice.Nfe = invoice.Nfe;
                 // xmlString = string com o XML que você recebeu
                 var serializer = new XmlSerializer(typeof(ProtNFe));
                 using var reader = new StringReader(result.ProtocolXml);
@@ -178,6 +182,7 @@ public partial class ConsumerSalePage : ContentPage
                 invoice.IssueDate = DateTime.Parse(xmlBuilder.dateHoraEmissao);
                 invoice.AuthorizationDate = resultx.InfProt.DhRecbto;
                 invoice.Protocol = resultx.InfProt.NProt.ToString();
+                invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(signedXml));
 
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
@@ -333,7 +338,33 @@ public partial class ConsumerSalePage : ContentPage
             return;
         }
 
-        await ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+        Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+        await printed;
+        if(printed.IsFaulted)
+        {
+            await _toastService.ShowToast("Erro ao imprimir o cupom.");
+        }
+        else {
+            var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+            post.Invoice.Printed = true;
+            invoiceCollection.Update(post.Invoice);
+        }
+
+        var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
+        var bo = await SendInvoiceToBackofficeAsync(backofficeReq);
+        if (!bo)
+        {
+            // Mostra mensagem amigável + log opcional com bo.RawBody
+            await _toastService.ShowToast($"Falha ao enviar para retaguarda");
+            // opcional: Console.WriteLine(bo.RawBody);
+        }
+        else
+        {
+            await _toastService.ShowToast("Retaguarda sincronizada.");
+            var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+            post.Invoice.Send = true;
+            invoiceCollection.Update(post.Invoice);
+        }
 
         _items.Clear();
 
@@ -366,6 +397,172 @@ public partial class ConsumerSalePage : ContentPage
             });
         }
     }
+
+
+    private BackofficeInvoiceRequest BuildBackofficeRequestFromInvoice(Invoice inv)
+    {
+        if (inv is null) throw new ArgumentNullException(nameof(inv));
+
+        // customerId: se não houver numérico, fica 0 (consumidor final)
+        
+        var req = new BackofficeInvoiceRequest
+        {
+            InvoiceTypeId = string.IsNullOrWhiteSpace(inv.InvoiceTypeId) ? "01" : inv.InvoiceTypeId,
+            CompanyId = string.IsNullOrWhiteSpace(inv.CompanyId) ? _branche.CompanyId : inv.CompanyId,
+            BrancheId = string.IsNullOrWhiteSpace(inv.BrancheId) ? _branche.Id : inv.BrancheId,
+            CustomerId = inv.Customer.Id,
+            NFKey = inv.NfKey,
+            NFe = inv.Nfe,
+            IssueDate = inv.IssueDate,
+            AuthorizedXml = string.IsNullOrWhiteSpace(inv.AuthorizedXml) ? null : Convert.FromBase64String(inv.AuthorizedXml),
+
+            // usa a série da própria invoice; se vier vazia, cai para a config do PDV
+            Serie = string.IsNullOrWhiteSpace(inv.Serie) ? (userConfig?.SeriePDV ?? "797") : inv.Serie,
+            InvoiceItems = (inv.Items ?? new List<InvoiceItem>()).Select(it =>
+            {
+                // unit price seguro: se vier 0, tenta derivar de total/qty; se não houver, fica 0
+                var qty = it.Quantity <= 0 ? 1 : it.Quantity;
+                var unitPrice = it.UnitPrice > 0
+                    ? it.UnitPrice
+                    : (it.TotalAmount > 0 ? it.TotalAmount / qty : 0m);
+
+                var total = it.TotalAmount > 0
+                    ? it.TotalAmount
+                    : unitPrice * qty;
+
+                return new BackofficeInvoiceItem
+                {
+                    MaterialId = it.MaterialId,
+                    Quantity = qty,
+                    UnitPrice = unitPrice,
+                    DiscountAmount = it.DiscountAmount is decimal d ? d : 0m,
+                    TotalAmount = total,
+                    UnitId = string.IsNullOrWhiteSpace(it.UnitId) ? "UN" : it.UnitId,
+                    CFOPId = it.CfopId,
+                };
+            }).ToList()
+        };
+
+        return req;
+    }
+
+
+    private async Task<bool> SendInvoiceToBackofficeAsync(BackofficeInvoiceRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(req);
+
+            using var httpReq = new HttpRequestMessage(HttpMethod.Post, "invoices")
+            {
+                Content = new StringContent(
+                    json,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+            httpReq.Headers.Accept.Clear();
+            httpReq.Headers.Accept.ParseAdd("*/*");
+
+            using var resp = await _http.SendAsync(httpReq, ct).ConfigureAwait(false);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                Console.WriteLine($"[Backoffice] FAIL -> Status: {(int)resp.StatusCode} {resp.ReasonPhrase}");
+                Console.WriteLine($"[Backoffice] Body: {body}");
+                return false;
+            }
+
+            return true;
+        }
+        catch (TaskCanceledException tex) when (!ct.IsCancellationRequested)
+        {
+            Console.WriteLine($"[Backoffice] TIMEOUT: {tex.Message}");
+            return false;
+        }
+        catch (HttpRequestException hex)
+        {
+            Console.WriteLine($"[Backoffice] NETWORK ERROR: {hex.Message}");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Backoffice] UNEXPECTED ERROR: {ex}");
+            return false;
+        }
+    }
+
+
+    private async Task CheckAndSendAuthorizedInvoicesAsync()
+    {
+        try
+        {
+            var invoiceCol = _db.GetCollection<Invoice>("invoice");
+
+            // busca notas AUTORIZADA que não foram enviadas (Send == false)
+            var pendentes = invoiceCol.Find(i =>
+                i.ClientId == _branche.ClientId &&
+                i.CompanyId == _branche.CompanyId &&
+                i.BrancheId == _branche.Id &&
+                i.NfeStatus == "AUTORIZADA" &&
+                (i.Send == false )
+            ).ToList();
+
+            if (pendentes == null || pendentes.Count == 0) return;
+
+            bool enviarAgora = await DisplayAlert(
+                "Notas autorizadas pendentes",
+                $"Existem {pendentes.Count} nota(s) autorizada(s) e não enviadas para a retaguarda.\nDeseja enviar agora?",
+                "Sim", "Não");
+
+            if (!enviarAgora) return;
+
+            int successCount = 0;
+            int failCount = 0;
+
+            foreach (var inv in pendentes)
+            {
+                try
+                {
+                 
+                    // monta request e envia
+                    var backReq = BuildBackofficeRequestFromInvoice(inv);
+                   
+                    var ok = await SendInvoiceToBackofficeAsync(backReq);
+
+                    if (ok)
+                    {
+                        // só marca como enviado se o backoffice confirmou (ou se a chamada HTTP foi 2xx)
+                        inv.Send = true;
+                      
+                        invoiceCol.Update(inv);
+                        successCount++;
+                    }
+
+                }
+                catch (Exception exItem)
+                {
+                    Console.WriteLine($"[Backoffice] Erro ao enviar invoice {inv.InvoiceId}: {exItem}");
+                   
+                    failCount++;
+                }
+            }
+
+            await _toastService.ShowToast($"Envio concluído. Sucesso: {successCount}, Falhas: {failCount}.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao checar/enviar notas pendentes: {ex}");
+            await _toastService.ShowToast("Erro ao verificar notas pendentes.");
+        }
+    }
+
+
+
+
+
+
+
 
     #region Impressão NFC-e via ESC/POS
 

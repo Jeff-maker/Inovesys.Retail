@@ -22,8 +22,16 @@ public class SyncService
 
     public async Task SyncEntitiesAsync<T>(string endpoint, string entityName, bool ignoreLastChange = false) where T : class
     {
-        var lastChange = ignoreLastChange ? null : _db.GetLastSyncDate(entityName);
+        
+        if("materialprice" == entityName.ToLower())
+        {
+            // Preço de material é sempre sincronizado por completo
+            var x = _db.GetLastSyncDate(entityName).Value;
+        }
+        DateTime? lastChange = ignoreLastChange ? null : _db.GetLastSyncDate(entityName).Value;
+        
         int skip = 0;
+        
         bool hasMore = true;
 
         // 🔹 Obtem o ClientId atual do usuário
@@ -43,7 +51,7 @@ public class SyncService
                 url += "&$expand=Address($expand=City($expand=State))";
 
             if (lastChange != null)
-                url += $"&$filter=LastChange gt {lastChange.Value:O}";
+                url += $"&$filter=LastChange gt {lastChange:O}";
 
             if (skip == 0)
                 url += "&$count=true";
