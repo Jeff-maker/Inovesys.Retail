@@ -6,13 +6,13 @@ namespace Inovesys.Retail.Entities
     public class Customer
     {
         [BsonId]
-        public string CompositeKey => $"{ClientId}-{CustomerId}";
+        public string CompositeKey => $"{ClientId}-{Id}";
 
         [BsonField("client_id")]
         public int ClientId { get; set; }
 
         [BsonField("customer_id")]
-        public int CustomerId { get; set; }
+        public int? Id { get; set; }
 
         [BsonField("name")]
         public string Name { get; set; } = string.Empty;

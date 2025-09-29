@@ -47,18 +47,18 @@ namespace Inovesys.Retail
             {
                 try
                 {
-                    await _syncService.SyncEntitiesAsync<Client>("clients", "clients", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<Company>("companies", "companie", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<Branche>("branchies", "branche", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<Certificate>("certificates", "certificate", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<CfopDetermination>("cfop-determinations", "cfopdetermination", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<PisDetermination99>("pis-determinations", "pisdetermination", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<CofinsDetermination99>("cofins-determinations", "cofinsdetermination", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<IcmsStDetermination>("icms-st-determinations", "icmsstdetermination", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<SalesChannel>("saleschannels", "saleschannel", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<Material>("materials", "material", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<MaterialPrice>("material-prices", "materialprice", ignoreLastChange: true);
-                    await _syncService.SyncEntitiesAsync<State>("states", "state", ignoreLastChange: true);
+                    await _syncService.SyncEntitiesAsync<Client>("clients", "clients", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<Company>("companies", "companie", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<Branche>("branchies", "branche", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<Certificate>("certificates", "certificate", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<CfopDetermination>("cfop-determinations", "cfopdetermination", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<PisDetermination99>("pis-determinations", "pisdetermination", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<CofinsDetermination99>("cofins-determinations", "cofinsdetermination", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<IcmsStDetermination>("icms-st-determinations", "icmsstdetermination", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<SalesChannel>("saleschannels", "saleschannel", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<Material>("materials", "material", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<MaterialPrice>("material-prices", "materialprice", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<State>("states", "state", ignoreLastChange: false);
 
                     // Precisa voltar para a UI thread para mexer em IsBusy ou exibir alerta
                     await MainThread.InvokeOnMainThreadAsync(async () =>

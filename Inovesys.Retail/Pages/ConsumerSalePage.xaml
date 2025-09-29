@@ -1,17 +1,22 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="Inovesys.Retail.Pages.ConsumerSalePage"
              xmlns:models="clr-namespace:Inovesys.Retail.Models"
+             x:Class="Inovesys.Retail.Pages.ConsumerSalePage"
              Title="Venda Consumidor">
 
-    <Grid Padding="20" RowSpacing="10">
+    <!-- Contêiner centralizado com largura máxima, bom para desktop -->
+    <Grid Padding="20"
+          RowSpacing="16"
+          HorizontalOptions="Center"
+          MaximumWidthRequest="900">
+
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <!-- Total -->
             <RowDefinition Height="Auto" />
             <!-- Código + Quantidade -->
-            <RowDefinition Height="*" />
-            <!-- Lista -->
+            <RowDefinition Height="*"    />
+            <!-- Lista (expande) -->
             <RowDefinition Height="Auto" />
             <!-- Botões Ações -->
             <RowDefinition Height="Auto" />
@@ -20,69 +25,91 @@
 
         <!-- Total da Venda -->
         <Label x:Name="lblTotal"
-               Text= "Total: R$ 0,00"
+               Grid.Row="0"
+               Text="Total: R$ 0,00"
                FontSize="28"
                FontAttributes="Bold"
-               HorizontalOptions="Center"
-               Grid.Row="0" />
+               HorizontalOptions="Center" />
 
-        <!-- Campo de Código e Quantidade -->
-        <HorizontalStackLayout Grid.Row="1" Spacing="10" HorizontalOptions="Center">
+        <!-- Código e Quantidade: Grid com * + Auto -->
+        <Grid Grid.Row="1" ColumnSpacing="12"
+              ColumnDefinitions="*,120">
             <Entry x:Name="entryProductCode"
+                   Grid.Column="0"
                    Placeholder="Código do produto"
                    ReturnType="Next"
-                   WidthRequest="270"
-                   Completed="OnProductCodeEntered" />
+                   Completed="OnProductCodeEntered"
+                   HorizontalOptions="Fill" />
 
             <Entry x:Name="entryQuantity"
+                   Grid.Column="1"
                    Text="1"
                    Keyboard="Numeric"
-                   WidthRequest="80"
                    HorizontalTextAlignment="Center"
                    Completed="OnProductCodeEntered"
                    Focused="OnQuantityFocused" />
-        </HorizontalStackLayout>
+        </Grid>
 
-        <!-- Lista de Itens -->
-        <CollectionView x:Name="ItemsListView"
-                        Grid.Row="2"
-                        HeightRequest="300"
-                        SelectionMode="Single"
-                        HorizontalOptions="Center"
-                        WidthRequest="360"
-                        BackgroundColor="#FFFFE0">
-            <CollectionView.ItemTemplate>
-                <DataTemplate  x:DataType="models:ConsumerSaleItem">
-                    <Grid Padding="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+        <!-- Lista de Itens: ocupa todo o espaço disponível -->
+        <Border Grid.Row="2"
+                BackgroundColor="#FFFFE0"
+                StrokeShape="RoundRectangle 8"
+                Padding="8">
+            <CollectionView x:Name="ItemsListView"
+                            SelectionMode="Single"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="FillAndExpand">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:ConsumerSaleItem">
+                        <Grid Padding="8" ColumnSpacing="8"
+                              ColumnDefinitions="*,Auto,Auto">
+                            <Label Grid.Column="0" Text="{Binding Description}" FontSize="16" />
+                            <Label Grid.Column="1" Text="{Binding Quantity}"  FontSize="16" HorizontalTextAlignment="End" />
+                            <Label Grid.Column="2" Text="{Binding Price, StringFormat='R$ {0:F2}'}"
+                                   FontSize="16" HorizontalTextAlignment="End" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </Border>
 
-                        <Label Text="{Binding Description}" FontSize="16" />
-                        <Label Text="{Binding Quantity}" FontSize="16" Grid.Column="1" Margin="10,0" />
-                        <Label Text="{Binding Price, StringFormat='R$ {0:F2}'}"
-                               FontSize="16"
-                               Grid.Column="2"
-                               HorizontalOptions="End" />
-                    </Grid>
-                </DataTemplate>
-            </CollectionView.ItemTemplate>
-        </CollectionView>
+        <!-- Botões de Ações: Flex com wrap (quebra em telas estreitas) -->
+        <FlexLayout Grid.Row="3"
+                    Direction="Row"
+                    Wrap="Wrap"
+                    JustifyContent="Center"
+                    AlignItems="Center"
+                    AlignContent="Center"
+                    Margin="0,8,0,0">
+            <Button Text="Cancelar Item"
+                    Clicked="OnCancelItemClicked"
+                    Margin="6"
+                    WidthRequest="220" />
+            <Button Text="Desconto"
+                    Clicked="OnDiscountClicked"
+                    Margin="6"
+                    WidthRequest="220" />
+        </FlexLayout>
 
-        <!-- Botões de Ações -->
-        <HorizontalStackLayout Grid.Row="3" Spacing="10" HorizontalOptions="Center">
-            <Button Text="Cancelar Item" Clicked="OnCancelItemClicked" />
-            <Button Text="Desconto" Clicked="OnDiscountClicked" />
-        </HorizontalStackLayout>
+        <!-- Botões de Venda: Flex com wrap e larguras iguais -->
+        <FlexLayout Grid.Row="4"
+                    Direction="Row"
+                    Wrap="Wrap"
+                    JustifyContent="Center"
+                    AlignItems="Center"
+                    AlignContent="Center"
+                    Margin="0,4,0,0">
+            <Button Text="Cancelar Venda"
+                    BackgroundColor="Red" TextColor="White"
+                    Clicked="OnCancelSaleClicked"
+                    Margin="6"
+                    WidthRequest="220" />
+            <Button Text="Finalizar Venda"
+                    BackgroundColor="Green" TextColor="White"
+                    Clicked="OnFinalizeSaleClicked"
+                    Margin="6"
+                    WidthRequest="220" />
+        </FlexLayout>
 
-        <!-- Botões de Venda -->
-        <HorizontalStackLayout Grid.Row="4" Spacing="10" HorizontalOptions="Center">
-            <Button Text="Cancelar Venda" BackgroundColor="Red" TextColor="White"
-                    Clicked="OnCancelSaleClicked" />
-            <Button Text="Finalizar Venda" BackgroundColor="Green" TextColor="White"
-                    Clicked="OnFinalizeSaleClicked" />
-        </HorizontalStackLayout>
     </Grid>
 </ContentPage>
