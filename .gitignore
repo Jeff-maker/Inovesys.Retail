@@ -1,0 +1,108 @@
+## Build results
+bin/
+obj/
+**/bin/
+**/obj/
+
+## User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.vsp
+
+## Mono Auto Generated Files
+mono_crash.*
+
+## VS Code
+.vscode/
+
+## Rider
+.idea/
+*.sln.iml
+
+## Build folders (use with care!)
+build/
+bld/
+
+## Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+## OS X
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## MAUI artifacts
+**/platforms/**/build/
+**/platforms/**/obj/
+**/platforms/**/bin/
+**/Resources/Raw/*.db
+**/Resources/Raw/*.sqlite
+**/*.apk
+**/*.aab
+**/*.app
+**/*.ipa
+**/*.exe
+**/*.dll
+**/*.pdb
+
+## iOS specific
+*.mode1
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xcworkspace
+*.xccheckout
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+*.xcconfig
+
+## Android Studio
+.gradle/
+local.properties
+.idea/
+*.iml
+*.hprof
+
+## Visual Studio
+.vs/
+*.dbmdl
+*.bak
+*.backup
+*.log
+*.tlog
+*.vspscc
+*.vssscc
+*.userprefs
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+*.nuspec
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## MacCatalyst and Simulator
+DerivedData/
+*.xcuserstate
+
+## Test Results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+## Others
+*.swp
+*.tmp
+*.orig
+*.rej
+*.bak
+*.log
