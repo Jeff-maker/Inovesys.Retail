@@ -10,7 +10,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Serialization;
-using static System.Net.WebRequestMethods;
 
 namespace Inovesys.Retail.Pages;
 
@@ -251,9 +250,16 @@ public partial class ConsumerSalePage : ContentPage
         if (!int.TryParse(entryQuantity.Text?.Trim(), out quantity))
             quantity = 1;
 
+        var nextItemNumber = _items.Any()
+            ? _items.Max(i => i.Id) + 1
+            : 1;
+
+
+
         _items.Add(new ConsumerSaleItem
         {
-            Id = product.Id,
+            Id = nextItemNumber,
+            MaterialId = product.Id,
             Description = product.Name,
             Price = price.Price * quantity,
             Quantity = quantity,
@@ -310,7 +316,8 @@ public partial class ConsumerSalePage : ContentPage
             Serie = userConfig.SeriePDV,
             InvoiceItems = _items.Select((item, index) => new InvoiceItemPostDto
             {
-                MaterialId = (item.Id),
+                Id = (item.Id),
+                MaterialId = (item.MaterialId),
                 MaterialName = (item.Description),
                 Quantity = item.Quantity,
                 UnitPrice = item.Price / item.Quantity,
@@ -338,17 +345,17 @@ public partial class ConsumerSalePage : ContentPage
             return;
         }
 
-        Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
-        await printed;
-        if(printed.IsFaulted)
-        {
-            await _toastService.ShowToast("Erro ao imprimir o cupom.");
-        }
-        else {
-            var invoiceCollection = _db.GetCollection<Invoice>("invoice");
-            post.Invoice.Printed = true;
-            invoiceCollection.Update(post.Invoice);
-        }
+        //Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+        //await printed;
+        //if(printed.IsFaulted)
+        //{
+        //    await _toastService.ShowToast("Erro ao imprimir o cupom.");
+        //}
+        //else {
+        //    var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+        //    post.Invoice.Printed = true;
+        //    invoiceCollection.Update(post.Invoice);
+        //}
 
         var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
         var bo = await SendInvoiceToBackofficeAsync(backofficeReq);
@@ -404,7 +411,34 @@ public partial class ConsumerSalePage : ContentPage
         if (inv is null) throw new ArgumentNullException(nameof(inv));
 
         // customerId: se não houver numérico, fica 0 (consumidor final)
-        
+
+        var items = (inv.Items ?? new List<InvoiceItem>()).Select(it =>
+        {
+            var qty = it.Quantity <= 0 ? 1 : it.Quantity;
+            var unitPrice = it.UnitPrice > 0
+                ? it.UnitPrice
+                : (it.TotalAmount > 0 ? it.TotalAmount / qty : 0m);
+
+            var total = it.TotalAmount > 0
+                ? it.TotalAmount
+                : unitPrice * qty;
+
+            return new BackofficeInvoiceItem
+            {
+                ItemNumber = it.ItemNumber,
+                MaterialId = it.MaterialId,
+                Quantity = qty,
+                UnitPrice = unitPrice,
+                DiscountAmount = it.DiscountAmount is decimal d ? d : 0m,
+                TotalAmount = total,
+                UnitId = string.IsNullOrWhiteSpace(it.UnitId) ? "UN" : it.UnitId,
+                CFOPId = it.CfopId,
+            };
+        }).ToList();
+
+        // Calcula o total da nota somando os itens
+        var totalAmount = items.Sum(x => x.TotalAmount);
+
         var req = new BackofficeInvoiceRequest
         {
             InvoiceTypeId = string.IsNullOrWhiteSpace(inv.InvoiceTypeId) ? "01" : inv.InvoiceTypeId,
@@ -415,32 +449,13 @@ public partial class ConsumerSalePage : ContentPage
             NFe = inv.Nfe,
             IssueDate = inv.IssueDate,
             AuthorizedXml = string.IsNullOrWhiteSpace(inv.AuthorizedXml) ? null : Convert.FromBase64String(inv.AuthorizedXml),
-
             // usa a série da própria invoice; se vier vazia, cai para a config do PDV
-            Serie = string.IsNullOrWhiteSpace(inv.Serie) ? (userConfig?.SeriePDV ?? "797") : inv.Serie,
-            InvoiceItems = (inv.Items ?? new List<InvoiceItem>()).Select(it =>
-            {
-                // unit price seguro: se vier 0, tenta derivar de total/qty; se não houver, fica 0
-                var qty = it.Quantity <= 0 ? 1 : it.Quantity;
-                var unitPrice = it.UnitPrice > 0
-                    ? it.UnitPrice
-                    : (it.TotalAmount > 0 ? it.TotalAmount / qty : 0m);
+            Serie = inv.Serie,
+            // total calculado no cabeçalho
+            TotalAmount = totalAmount,
 
-                var total = it.TotalAmount > 0
-                    ? it.TotalAmount
-                    : unitPrice * qty;
-
-                return new BackofficeInvoiceItem
-                {
-                    MaterialId = it.MaterialId,
-                    Quantity = qty,
-                    UnitPrice = unitPrice,
-                    DiscountAmount = it.DiscountAmount is decimal d ? d : 0m,
-                    TotalAmount = total,
-                    UnitId = string.IsNullOrWhiteSpace(it.UnitId) ? "UN" : it.UnitId,
-                    CFOPId = it.CfopId,
-                };
-            }).ToList()
+            // itens
+            InvoiceItems = items
         };
 
         return req;
@@ -556,13 +571,6 @@ public partial class ConsumerSalePage : ContentPage
             await _toastService.ShowToast("Erro ao verificar notas pendentes.");
         }
     }
-
-
-
-
-
-
-
 
     #region Impressão NFC-e via ESC/POS
 
