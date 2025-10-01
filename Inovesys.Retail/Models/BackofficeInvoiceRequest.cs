@@ -22,6 +22,9 @@ namespace Inovesys.Retail.Models
         [Newtonsoft.Json.JsonProperty("nfe")]
         public string NFe { get; set; }
 
+        [Newtonsoft.Json.JsonProperty("totalAmount")]
+        public decimal TotalAmount { get; set; }
+
         [Newtonsoft.Json.JsonProperty("nfKey")]
         public string NFKey { get; set; }
 

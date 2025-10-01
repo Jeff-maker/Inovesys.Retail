@@ -2,6 +2,7 @@
 {
     public class InvoiceItemPostDto
     {
+        public int Id { get; set; } 
         public string MaterialId { get; set; } = null!;
         public string MaterialName { get; set; } = null!;
         public decimal Quantity { get; set; }

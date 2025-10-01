@@ -3,6 +3,10 @@ namespace Inovesys.Retail.Models
 {
     public sealed class BackofficeInvoiceItem
     {
+
+        [Newtonsoft.Json.JsonProperty("itemNumber")]
+        public int ItemNumber { get; set; }
+
         [Newtonsoft.Json.JsonProperty("materialId")]
         public string MaterialId { get; set; }
 
