@@ -18,6 +18,11 @@ namespace Inovesys.Retail.Models
 
         [JsonPropertyName("@odata.count")]
         public int? Count { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("@odata.nextLink")]
+        public string NextLink { get; set; } = null;
+
+
     }
 
     public class BranchieDtoRoot

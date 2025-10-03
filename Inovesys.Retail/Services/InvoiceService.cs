@@ -104,6 +104,33 @@ namespace Inovesys.Retail.Services
                     LastChange = DateTime.UtcNow
                 };
 
+
+                // ===== vincula taxas aos itens por (InvoiceId, ItemNumber) =====
+                var taxesByItem = items.Taxes
+                    .GroupBy(t => (t.InvoiceId, t.ItemNumber))
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                // garante chaves nos itens
+                foreach (var it in items.Items)
+                {
+                    it.InvoiceId = Invoice.InvoiceId;
+
+                    // anexa as taxas desse item (se existirem)
+                    if (taxesByItem.TryGetValue((Invoice.InvoiceId, it.ItemNumber), out var lst))
+                        it.Taxes = lst;
+                    else
+                        it.Taxes = new List<InvoiceItemTax>();
+                }
+
+                // garante chaves nas taxas
+                foreach (var tx in items.Taxes)
+                {
+                    tx.InvoiceId = Invoice.InvoiceId;
+                }
+
+                // popula a instância em memória para retorno/uso imediato (XML, impressão, etc.)
+                Invoice.Items = items.Items;
+
                 _invoices.Insert(Invoice);
                 _invoiceItem.InsertBulk(items.Items);
                 _invoiceTaxes.InsertBulk(items.Taxes);

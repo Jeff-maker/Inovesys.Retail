@@ -21,7 +21,7 @@ namespace Inovesys.Retail.Entities
         public string Document { get; set; } = string.Empty;
 
         [BsonField("document_type")]
-        public int DocumentType { get; set; }
+        public int DocumentType { get; set; } 
 
         [BsonField("address_id")]
         public int AddressId { get; set; }

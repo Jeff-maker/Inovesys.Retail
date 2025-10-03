@@ -83,7 +83,9 @@ namespace Inovesys.Retail.Entities
         [BsonIgnore]
         public List<InvoicePayment> InvoicePayments { get; set; } = new();
 
-      
+        [BsonIgnore]
+        public string AdditionalInfo { get; set; } = string.Empty;
+
 
     }
 }

@@ -62,7 +62,7 @@ namespace Inovesys.Retail.Models
 
             var infAdic = _xmlDoc.CreateElement("infAdic");
 
-            infAdic.AppendChild(CreateElement("infCpl", "Federal R$ 0,00; Estadual R$ 0,00; Municipal R$ 0,00"));
+            infAdic.AppendChild(CreateElement("infCpl", _invoice.AdditionalInfo));
 
             infNFe.AppendChild(infAdic);
 
@@ -91,6 +91,7 @@ namespace Inovesys.Retail.Models
 
             return (xmlSemmIdentacao, QrCode , dateHoraEmissao);
         }
+              
 
         private void AddBasicInfo(XmlElement infNFe, string ambiente, string dateHoraEmiss)
         {
@@ -207,6 +208,11 @@ namespace Inovesys.Retail.Models
 
                 string cleanedDocument = Regex.Replace(_invoice.Customer.Document ?? "", "[^0-9]", "");
 
+                if (string.IsNullOrWhiteSpace(cleanedDocument))
+                {
+                    return;
+                }
+
                 switch (_invoice.Customer.DocumentType)
                 {
                     case 0: // CPF
@@ -220,22 +226,43 @@ namespace Inovesys.Retail.Models
                         break;
                 }
 
-                dest.AppendChild(CreateElement("xNome", _invoice.Customer.Name ?? "CONSUMIDOR NAO IDENTIFICADO"));
-                dest.AppendChild(CreateElement("indIEDest", "9")); // Ou outro valor conforme a IE
 
-                // Adiciona endereço (obrigatório)
-                var enderDest = _xmlDoc.CreateElement("enderDest");
-                enderDest.AppendChild(CreateElement("xLgr", "NAO INFORMADO"));
-                enderDest.AppendChild(CreateElement("nro", "0"));
-                enderDest.AppendChild(CreateElement("xBairro", "NAO INFORMADO"));
-                enderDest.AppendChild(CreateElement("cMun", "3550308")); // Default SP
-                enderDest.AppendChild(CreateElement("xMun", "SAO PAULO"));
-                enderDest.AppendChild(CreateElement("UF", "SP"));
-                enderDest.AppendChild(CreateElement("CEP", "00000000"));
-                enderDest.AppendChild(CreateElement("cPais", "1058")); // Brasil
-                enderDest.AppendChild(CreateElement("xPais", "BRASIL"));
-                dest.AppendChild(enderDest);
+                if (isHomologacao)
+                {
+                    // Ambiente de homologação: NÃO identificar destinatário
+                    // Não escreva CPF/CNPJ aqui
+                    dest.AppendChild(CreateElement("xNome", "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL"));
+                    dest.AppendChild(CreateElement("indIEDest", "9")); // não contribuinte
+                }
+                else
+                {
+                    // Produção: identificar normalmente
+                    switch (_invoice.Customer?.DocumentType)
+                    {
+                        case 0: // CPF
+                            if (cleanedDocument.Length == 11)
+                                dest.AppendChild(CreateElement("CPF", cleanedDocument));
+                            break;
+
+                        case 1: // CNPJ
+                            if (cleanedDocument.Length == 14)
+                                dest.AppendChild(CreateElement("CNPJ", cleanedDocument));
+                            break;
+                    }
+
+                    var nome = string.IsNullOrWhiteSpace(_invoice.Customer?.Name) ? "CONSUMIDOR" : _invoice.Customer.Name;
+                    dest.AppendChild(CreateElement("xNome", nome));
+                    dest.AppendChild(CreateElement("indIEDest", "9"));
+                }
+
+
+                //dest.AppendChild(enderDest);
+                infNFe.AppendChild(dest);
+
+
             }
+
+            
 
         }
 
