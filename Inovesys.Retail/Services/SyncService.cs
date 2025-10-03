@@ -23,13 +23,17 @@ public class SyncService
     public async Task SyncEntitiesAsync<T>(string endpoint, string entityName, bool ignoreLastChange = false) where T : class
     {
         
-        if("materialprice" == entityName.ToLower())
+        if("" == entityName.ToLower())
         {
             // Preço de material é sempre sincronizado por completo
             var x = _db.GetLastSyncDate(entityName).Value;
         }
-        DateTime? lastChange = ignoreLastChange ? null : _db.GetLastSyncDate(entityName).Value;
-        
+        DateTime? lastChange = ignoreLastChange
+             ? null
+             : _db.GetLastSyncDate(entityName); // cast implícito p/ nullable, sem .Value
+
+        lastChange = lastChange?.ToUniversalTime();
+
         int skip = 0;
         
         bool hasMore = true;
@@ -45,7 +49,7 @@ public class SyncService
         while (hasMore)
         {
             // Solicita contagem apenas na primeira chamada
-            var url = $"{endpoint}?$orderby=LastChange asc&$top={PageSize}&$skip={skip}";
+            var url = $"{endpoint}?$orderby=LastChange asc&$skip={skip}";
 
             if (typeof(T).Name == "Branche")
                 url += "&$expand=Address($expand=City($expand=State))";
@@ -92,7 +96,7 @@ public class SyncService
             _db.SaveEntities(result);
 
             skip += PageSize;
-            hasMore = result.Count == PageSize;
+            hasMore = totalCount > skip;
         }
 
         //if (!ignoreLastChange)

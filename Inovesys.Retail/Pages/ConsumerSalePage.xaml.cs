@@ -345,17 +345,18 @@ public partial class ConsumerSalePage : ContentPage
             return;
         }
 
-        //Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
-        //await printed;
-        //if(printed.IsFaulted)
-        //{
-        //    await _toastService.ShowToast("Erro ao imprimir o cupom.");
-        //}
-        //else {
-        //    var invoiceCollection = _db.GetCollection<Invoice>("invoice");
-        //    post.Invoice.Printed = true;
-        //    invoiceCollection.Update(post.Invoice);
-        //}
+        Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+        await printed;
+        if (printed.IsFaulted)
+        {
+            await _toastService.ShowToast("Erro ao imprimir o cupom.");
+        }
+        else
+        {
+            var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+            post.Invoice.Printed = true;
+            invoiceCollection.Update(post.Invoice);
+        }
 
         var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
         var bo = await SendInvoiceToBackofficeAsync(backofficeReq);
