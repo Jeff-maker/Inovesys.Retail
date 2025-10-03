@@ -2,37 +2,90 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:models="clr-namespace:Inovesys.Retail.Models"
              x:Class="Inovesys.Retail.Pages.ConsumerSalePage"
-             Title="Venda Consumidor">
+              Title="">
 
-    <!-- Contêiner centralizado com largura máxima, bom para desktop -->
+    <ContentPage.MenuBarItems>
+        <MenuBarItem Text="Venda Consumidor">
+            <MenuFlyoutItem x:Name="miFinalizar"
+                        Text="Finalizar venda (F5)"
+                        Clicked="OnFinalizeSaleClicked">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F5" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+    </ContentPage.MenuBarItems>
+
+    <!-- ====== ESTILOS / RECURSOS ====== -->
+    <ContentPage.Resources>
+        <!-- Botões responsivos: 2 por linha (48%), crescem igualmente -->
+        <Style x:Key="FlexButton" TargetType="Button">
+            <Setter Property="Margin" Value="6" />
+            <Setter Property="HeightRequest" Value="48" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontAttributes" Value="Bold" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FlexLayout.Grow" Value="1" />
+            <Setter Property="FlexLayout.Basis" Value="48%" />
+            <Setter Property="HorizontalOptions" Value="Fill" />
+        </Style>
+    </ContentPage.Resources>
+
+    <!-- ====== CONTAINER ====== -->
     <Grid Padding="20"
           RowSpacing="16"
           HorizontalOptions="Center"
           MaximumWidthRequest="900">
 
+        <!-- 0: Total | 1: CPF+Cadastrar | 2: Código+Qtd | 3: Lista | 4: Ações | 5: Venda -->
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <!-- Total -->
+            <!-- 0: Total -->
             <RowDefinition Height="Auto" />
-            <!-- Código + Quantidade -->
+            <!-- 1: CPF + Cadastrar -->
+            <RowDefinition Height="Auto" />
+            <!-- 2: Código + Quantidade -->
             <RowDefinition Height="*"    />
-            <!-- Lista (expande) -->
+            <!-- 3: Lista -->
             <RowDefinition Height="Auto" />
-            <!-- Botões Ações -->
+            <!-- 4: Botões Ações -->
             <RowDefinition Height="Auto" />
-            <!-- Botões Venda -->
+            <!-- 5: Botões Venda -->
         </Grid.RowDefinitions>
 
-        <!-- Total da Venda -->
+        <!-- ====== (0) TOTAL ====== -->
         <Label x:Name="lblTotal"
                Grid.Row="0"
                Text="Total: R$ 0,00"
                FontSize="28"
                FontAttributes="Bold"
-               HorizontalOptions="Center" />
+               HorizontalOptions="Center"
+               Margin="0,0,0,6" />
 
-        <!-- Código e Quantidade: Grid com * + Auto -->
-        <Grid Grid.Row="1" ColumnSpacing="12"
+        <!-- ====== (1) CPF + CADASTRAR ====== -->
+        <Grid Grid.Row="1"
+              ColumnSpacing="12"
+              ColumnDefinitions="*,Auto">
+            <Entry x:Name="entryCustomerCpf"
+                       Grid.Column="0"
+                       Placeholder="CPF do consumidor"
+                       Keyboard="Numeric"
+                       MaxLength="14"
+                       Unfocused="OnCpfUnfocused"
+                       Completed="OnCpfCompleted"
+                       HorizontalOptions="Fill" />
+
+                <Button Grid.Column="1"
+                    Text="Cadastrar"
+                    BackgroundColor="DodgerBlue"
+                    TextColor="White"
+                    Padding="12,6"
+                    Clicked="OnCadastrarClienteClicked" />
+        </Grid>
+
+        <!-- ====== (2) CÓDIGO + QUANTIDADE ====== -->
+        <Grid Grid.Row="2"
+              ColumnSpacing="12"
               ColumnDefinitions="*,120">
             <Entry x:Name="entryProductCode"
                    Grid.Column="0"
@@ -50,65 +103,87 @@
                    Focused="OnQuantityFocused" />
         </Grid>
 
-        <!-- Lista de Itens: ocupa todo o espaço disponível -->
-        <Border Grid.Row="2"
-                BackgroundColor="#FFFFE0"
-                StrokeShape="RoundRectangle 8"
-                Padding="8">
-            <CollectionView x:Name="ItemsListView"
-                            SelectionMode="Single"
-                            HorizontalOptions="Fill"
-                            VerticalOptions="FillAndExpand">
-                <CollectionView.ItemTemplate>
-                    <DataTemplate x:DataType="models:ConsumerSaleItem">
-                        <Grid Padding="8" ColumnSpacing="8"
-                              ColumnDefinitions="*,Auto,Auto">
-                            <Label Grid.Column="0" Text="{Binding Description}" FontSize="16" />
-                            <Label Grid.Column="1" Text="{Binding Quantity}"  FontSize="16" HorizontalTextAlignment="End" />
-                            <Label Grid.Column="2" Text="{Binding Price, StringFormat='R$ {0:F2}'}"
-                                   FontSize="16" HorizontalTextAlignment="End" />
-                        </Grid>
-                    </DataTemplate>
-                </CollectionView.ItemTemplate>
-            </CollectionView>
+        <!-- 3) LISTA DE ITENS -->
+        <Border Grid.Row="3"
+        BackgroundColor="#FFFFE0"
+        Padding="8">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="8" />
+            </Border.StrokeShape>
+
+            <Grid RowSpacing="4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <!-- Cabeçalho -->
+                    <RowDefinition Height="*" />
+                    <!-- Itens -->
+                </Grid.RowDefinitions>
+
+                <!-- Cabeçalho -->
+                <Grid Grid.Row="0"
+              Padding="8,4"
+              BackgroundColor="#EEE"
+              ColumnSpacing="8"
+              ColumnDefinitions="*,Auto,Auto">
+                    <Label Grid.Column="0" Text="Descrição" FontAttributes="Bold" />
+                    <Label Grid.Column="1" Text="Qtd" FontAttributes="Bold" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="2" Text="Preço" FontAttributes="Bold" HorizontalTextAlignment="End" />
+                </Grid>
+
+                <!-- Lista -->
+                <CollectionView Grid.Row="1"
+                        x:Name="ItemsListView"
+                        SelectionMode="Single"
+                        HorizontalOptions="Fill" >
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ConsumerSaleItem">
+                            <Grid Padding="8"
+                          ColumnSpacing="8"
+                          ColumnDefinitions="*,Auto,Auto">
+                                <Label Grid.Column="0" Text="{Binding Description}" FontSize="16" />
+                                <Label Grid.Column="1" Text="{Binding Quantity}" FontSize="16" HorizontalTextAlignment="End" />
+                                <Label Grid.Column="2" Text="{Binding Price, StringFormat='R$ {0:F2}'}" FontSize="16" HorizontalTextAlignment="End" />
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </Grid>
         </Border>
 
-        <!-- Botões de Ações: Flex com wrap (quebra em telas estreitas) -->
-        <FlexLayout Grid.Row="3"
-                    Direction="Row"
-                    Wrap="Wrap"
-                    JustifyContent="Center"
-                    AlignItems="Center"
-                    AlignContent="Center"
-                    Margin="0,8,0,0">
-            <Button Text="Cancelar Item"
-                    Clicked="OnCancelItemClicked"
-                    Margin="6"
-                    WidthRequest="220" />
-            <Button Text="Desconto"
-                    Clicked="OnDiscountClicked"
-                    Margin="6"
-                    WidthRequest="220" />
-        </FlexLayout>
-
-        <!-- Botões de Venda: Flex com wrap e larguras iguais -->
+        <!-- ====== (4) BOTÕES DE AÇÕES ====== -->
         <FlexLayout Grid.Row="4"
                     Direction="Row"
                     Wrap="Wrap"
-                    JustifyContent="Center"
-                    AlignItems="Center"
-                    AlignContent="Center"
+                    JustifyContent="SpaceBetween"
+                    AlignItems="Stretch"
+                    AlignContent="Stretch"
+                    Margin="0,8,0,0">
+            <Button Style="{StaticResource FlexButton}"
+                    Text="Cancelar Item"
+                    Clicked="OnCancelItemClicked" />
+            <Button Style="{StaticResource FlexButton}"
+                    Text="Desconto"
+                    Clicked="OnDiscountClicked" />
+        </FlexLayout>
+
+        <!-- ====== (5) BOTÕES DE VENDA ====== -->
+        <FlexLayout Grid.Row="5"
+                    Direction="Row"
+                    Wrap="Wrap"
+                    JustifyContent="SpaceBetween"
+                    AlignItems="Stretch"
+                    AlignContent="Stretch"
                     Margin="0,4,0,0">
-            <Button Text="Cancelar Venda"
-                    BackgroundColor="Red" TextColor="White"
-                    Clicked="OnCancelSaleClicked"
-                    Margin="6"
-                    WidthRequest="220" />
-            <Button Text="Finalizar Venda"
-                    BackgroundColor="Green" TextColor="White"
-                    Clicked="OnFinalizeSaleClicked"
-                    Margin="6"
-                    WidthRequest="220" />
+            <Button Style="{StaticResource FlexButton}"
+                    Text="Cancelar Venda"
+                    BackgroundColor="Red"
+                    TextColor="White"
+                    Clicked="OnCancelSaleClicked" />
+            <Button Style="{StaticResource FlexButton}"
+                    Text="Finalizar venda (F5)"
+                    BackgroundColor="Green"
+                    TextColor="White"
+                    Clicked="OnFinalizeSaleClicked" />
         </FlexLayout>
 
     </Grid>

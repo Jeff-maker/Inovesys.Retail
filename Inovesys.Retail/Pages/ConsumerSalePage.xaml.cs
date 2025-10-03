@@ -3,9 +3,7 @@ using Inovesys.Retail.Models;
 using Inovesys.Retail.Services;
 using LiteDB;
 using System.Collections.ObjectModel;
-using System.Data.SqlTypes;
 using System.Globalization;
-using System.IO.Ports;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -17,10 +15,10 @@ public partial class ConsumerSalePage : ContentPage
 {
     private ObservableCollection<ConsumerSaleItem> _items = new();
 
+
     private LiteDbService _db;
 
     UserConfig userConfig;
-
 
     Client _client { set; get; }
     Company _company { set; get; }
@@ -30,10 +28,10 @@ public partial class ConsumerSalePage : ContentPage
 
     // Defaults (pode ler de LiteDB/UserConfig depois)
     private const string DefaultPrinterName = "MP-4200 TH"; // nome no Windows
-    
+
     private ToastService _toastService;
 
-    public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService , IHttpClientFactory httpClientFactor)
+    public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor)
     {
         InitializeComponent();
         ItemsListView.ItemsSource = _items;
@@ -127,16 +125,17 @@ public partial class ConsumerSalePage : ContentPage
         await Task.Delay(100);
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            entryProductCode.Focus();
+            entryCustomerCpf.Focus();
         });
     }
+
 
     private async Task<(bool Success, string QrCode)> EnviarNotaParaSefaz(Invoice invoice)
     {
         try
         {
             // Carrega os itens da nota
-            
+
             var itemCollection = _db.GetCollection<InvoiceItem>("invoiceitem");
             var items = itemCollection
                 .Find(i => i.ClientId == invoice.ClientId && i.InvoiceId == invoice.InvoiceId)
@@ -163,7 +162,7 @@ public partial class ConsumerSalePage : ContentPage
             var qrCode = xmlBuilder.QrCode;
 
             var sefazService = new SefazService(_db, _company); // instanciado com seus parâmetros
-                     
+
             var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice);
 
             if (result.Success)
@@ -210,7 +209,15 @@ public partial class ConsumerSalePage : ContentPage
     private async void OnProductCodeEntered(object sender, EventArgs e)
     {
         var code = entryProductCode.Text?.Trim();
-        if (string.IsNullOrEmpty(code)) return;
+        if (string.IsNullOrEmpty(code))
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                entryProductCode.Focus();
+
+            });
+            return;
+        }
 
         var col = _db.GetCollection<Material>("material");
         var product = col.FindOne(p =>
@@ -335,7 +342,33 @@ public partial class ConsumerSalePage : ContentPage
             return;
         }
 
-        //await _toastService.ShowToast("Venda Finalizada");
+
+
+
+
+        // CPF no XML: se o campo estiver preenchido e válido, grava no Invoice
+        var cpfDigits = OnlyDigits(entryCustomerCpf.Text?.Trim() ?? "");
+        if (cpfDigits.Length == 11 && IsValidCpf(cpfDigits))
+        {
+            post.Invoice.Customer ??= new Customer();
+            post.Invoice.Customer.Document = cpfDigits;            // usado pelo NFeXmlBuilder para <dest><CPF>
+            if (string.IsNullOrWhiteSpace(post.Invoice.Customer.Name))
+                post.Invoice.Customer.Name = "CONSUMIDOR";
+
+            // Se existir indicador de IE do destinatário no seu modelo, garanta '9' (não contribuinte):
+            // post.Invoice.Customer.IndicadorIEDest = "9"; // ajuste o nome do campo conforme seu modelo
+            // Se houver tipo de pessoa:
+            // post.Invoice.Customer.Type = "F";            // Pessoa Física (se existir no seu modelo)
+
+            // persiste no LiteDB antes da montagem/assinatura, por segurança
+            var invCol = _db.GetCollection<Invoice>("invoice");
+            invCol.Update(post.Invoice);
+        }
+
+
+        // CALCULA IBPT AQUI, ANTES DE ASSINAR/ENVIAR
+        var ibpt = TaxUtils.CalculateApproximateTaxes(post.Invoice, _db, assumeImported: false);
+        post.Invoice.AdditionalInfo = TaxUtils.BuildIbptObservation(ibpt);
 
         var send = await EnviarNotaParaSefaz(invoice: post.Invoice);
         if (!send.Success)
@@ -377,11 +410,12 @@ public partial class ConsumerSalePage : ContentPage
         _items.Clear();
 
         entryQuantity.Text = "1";
+        entryCustomerCpf.Text = string.Empty;
 
         _ = Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            entryProductCode.Focus();
+            entryCustomerCpf.Focus();
 
         });
 
@@ -521,7 +555,7 @@ public partial class ConsumerSalePage : ContentPage
                 i.CompanyId == _branche.CompanyId &&
                 i.BrancheId == _branche.Id &&
                 i.NfeStatus == "AUTORIZADA" &&
-                (i.Send == false )
+                (i.Send == false)
             ).ToList();
 
             if (pendentes == null || pendentes.Count == 0) return;
@@ -540,17 +574,17 @@ public partial class ConsumerSalePage : ContentPage
             {
                 try
                 {
-                 
+
                     // monta request e envia
                     var backReq = BuildBackofficeRequestFromInvoice(inv);
-                   
+
                     var ok = await SendInvoiceToBackofficeAsync(backReq);
 
                     if (ok)
                     {
                         // só marca como enviado se o backoffice confirmou (ou se a chamada HTTP foi 2xx)
                         inv.Send = true;
-                      
+
                         invoiceCol.Update(inv);
                         successCount++;
                     }
@@ -559,7 +593,7 @@ public partial class ConsumerSalePage : ContentPage
                 catch (Exception exItem)
                 {
                     Console.WriteLine($"[Backoffice] Erro ao enviar invoice {inv.InvoiceId}: {exItem}");
-                   
+
                     failCount++;
                 }
             }
@@ -576,24 +610,37 @@ public partial class ConsumerSalePage : ContentPage
     #region Impressão NFC-e via ESC/POS
 
     // Helper: escrever linha ESC/POS
-
+    static void EscPos_SetLineSpacing(Stream s, byte dots) => s.Write(new byte[] { 0x1B, 0x33, dots }, 0, 3);  // ESC 3 n
     static void EscPos_Reset(Stream s) => s.Write(new byte[] { 0x1B, 0x40 });                         // ESC @
     static void EscPos_Align(Stream s, byte n) => s.Write(new byte[] { 0x1B, 0x61, n });                      // 0=left 1=center 2=right
     static void EscPos_Bold(Stream s, bool on) => s.Write(new byte[] { 0x1B, 0x45, (byte)(on ? 1 : 0) });     // ESC E n
     static void EscPos_Feed(Stream s, byte n) => s.Write(new byte[] { 0x1B, 0x64, n });                       // ESC d n
     static void EscPos_Cut(Stream s) => s.Write(new byte[] { 0x1D, 0x56, 0x42, 0x00 });             // GS V B 0
-    static void EscPos_CodePage1252(Stream s) => s.Write(new byte[] { 0x1B, 0x74, 0x10 });
+
+    // Encoding atual usada para converter string -> bytes
+    static Encoding CurrentEnc = CodePagesEncodingProvider.Instance.GetEncoding(1252); // default
+
+    static void SetEncoding(Encoding enc) => CurrentEnc = enc ?? Encoding.UTF8;
+
+    static void EscPos_FontB(Stream s) => s.Write(new byte[] { 0x1B, 0x4D, 0x01 }, 0, 3);
+    static void EscPos_FontA(Stream s) => s.Write(new byte[] { 0x1B, 0x4D, 0x00 }, 0, 3);
+    static void EscPos_SetCodePage(Stream s, byte escT, int dotnetCodePage)
+    {
+        // ESC t n  → seleciona “character code table” na impressora
+        s.Write(new byte[] { 0x1B, 0x74, escT }, 0, 3);
+        SetEncoding(CodePagesEncodingProvider.Instance.GetEncoding(dotnetCodePage));
+    }
 
     public async Task ImprimirCupomViaEscPosAsync(Invoice invoice, string qrCodeUrl)
     {
         try
         {
-            
-            const int COLS = 30; 
+
+            const int COLS = 42;
             using var ms = new MemoryStream();
 
             EscPos_Reset(ms);
-            EscPos_CodePage1252(ms);
+            EscPos_SetCodePage(ms, 0x00, 437);
 
             // ----- Cabeçalho (alinhado à esquerda, com algumas linhas em negrito/centrado) -----
             EscPos_Bold(ms, true);
@@ -602,21 +649,22 @@ public partial class ConsumerSalePage : ContentPage
             EscPos_Bold(ms, false);
             EscPos_Align(ms, 0);
 
-            Writeln(ms, $"CNPJ: {_branche?.Cnpj} {_company?.Description}", COLS);
+            EscPos_Align(ms, 1);
+            Writeln(ms, $"CNPJ: {_branche?.Cnpj} ");
+            Writeln(ms, $"{_company?.Description}", COLS);
+
+            EscPos_Align(ms, 0);
+
             Writeln(ms, $"{_branche?.Street}, {_branche?.HouseNumber} - {_branche?.Neighborhood} - {_branche?.CityId} - {_branche?.StateId} - CEP: {_branche?.PostalCode}", COLS);
 
             EscPos_Align(ms, 1); // 0=esquerda, 1=centro, 2=direita
             Writeln(ms, $"IE: {_branche?.StateRegistration}", COLS);
             EscPos_Align(ms, 0); // volta para alinhamento à esquerda
+                                 // Fonte menor + line spacing baixo
+            EscPos_FontB(ms);                 // menor que a A
+            EscPos_SetLineSpacing(ms, 8);     // compacto (6–8 costuma ficar bom)  
 
-
-            //if (!string.IsNullOrWhiteSpace(_branche?.Phone))
-            //    Writeln(ms, $"Fone: {_branche.Phone}", COLS);
-
-            //Line(ms, COLS);
-
-            // ----- Itens (igual ao layout: linha 1 = código + descrição; linha 2 = qtd/un x unit = total) -----
-            Writeln(ms, $"# Codigo   Descricao  Qtde Un  Valor Total");
+            Writeln(ms, $"Item Codigo Descricao        Qtde Un      Valor    Total");
             int seq = 1;
             foreach (var it in invoice.Items)
             {
@@ -629,10 +677,10 @@ public partial class ConsumerSalePage : ContentPage
                 var unit = it.UnitPrice;
                 var tot = unit * q;
 
-                // Ex.: "1 UN   x 249,99 = 249,99"
+
                 EscPos_Align(ms, 2);
                 Writeln(ms, $"{q:0.##} {un} x R$ {unit:N2} = R$ {tot:N2}", COLS);
-                EscPos_Align(ms, 0);
+                EscPos_Reset(ms);
 
                 seq++;
             }
@@ -652,6 +700,21 @@ public partial class ConsumerSalePage : ContentPage
             EscPos_Bold(ms, true);
             LeftRight(ms, "VALOR TOTAL R$", $"{vTotal:N2}", COLS);
             EscPos_Bold(ms, false);
+            // ----- Informações complementares / IBPT -----
+            if (!string.IsNullOrWhiteSpace(invoice.AdditionalInfo))
+            {
+                // largura maior só para este bloco
+                const int INFO_COLS = 42; // ajuste conforme sua bobina (ex.: 40 ou 42 chars)
+
+                Line(ms, COLS);
+                EscPos_Bold(ms, true);
+                Writeln(ms, "INFORMACOES COMPLEMENTARES", COLS); // sem acento por segurança ESC/POS
+                EscPos_Bold(ms, false);
+
+                foreach (var line in Wrap(invoice.AdditionalInfo, INFO_COLS))
+                    Writeln(ms, line, INFO_COLS);
+            }
+
 
             // ----- Formas de pagamento (como no cupom) -----
             if (invoice.InvoicePayments?.Any() == true)
@@ -666,6 +729,9 @@ public partial class ConsumerSalePage : ContentPage
 
             Line(ms, COLS);
 
+            // Fonte menor + line spacing baixo
+            EscPos_FontB(ms);                 // menor que a A
+            EscPos_SetLineSpacing(ms, 6);     // compacto (6–8 costuma ficar bom)
             // ----- Consulta por chave/URL -----
             Writeln(ms, "Consulte pela Chave de Acesso em", COLS);
             Writeln(ms, "https://www.nfce.fazenda.sp.gov.br/consulta", COLS);
@@ -676,7 +742,6 @@ public partial class ConsumerSalePage : ContentPage
             if (!string.IsNullOrWhiteSpace(invoice.Customer.Document))
             {
                 Writeln(ms, $"CONSUMIDOR - CPF {CpfMask((invoice.Customer.Document))}", COLS);
-                Writeln(ms, invoice.Customer.Name, COLS);
             }
 
             //if (!string.IsNullOrWhiteSpace(invoice.Customer.AddressId))
@@ -686,11 +751,10 @@ public partial class ConsumerSalePage : ContentPage
 
             var dataAut = invoice.AuthorizationDate?.ToString("dd/MM/yyyy HH:mm:ss");
             var dataEmi = invoice.IssueDate.ToString("dd/MM/yyyy HH:mm:ss");
-            LeftRight(ms, $"NFC-e nº {invoice.Nfe}  Série {invoice.Serie}",
-                           $"{dataEmi}", COLS);
+            Writeln(ms, $"NFC-e  {invoice.Nfe}  Série {invoice.Serie}");
+            Writeln(ms, $"Data de Emissão {dataEmi}");
             if (!string.IsNullOrWhiteSpace(invoice.AuthorizationProtocol))
                 Writeln(ms, $"Protocolo de Autorização: {invoice.AuthorizationProtocol}", COLS);
-
             if (!string.IsNullOrWhiteSpace(dataAut))
                 Writeln(ms, $"Data de Autorização: {dataAut}", COLS);
 
@@ -699,10 +763,6 @@ public partial class ConsumerSalePage : ContentPage
             var qr = BuildQrCodeEscPos(qrCodeUrl);
             ms.Write(qr, 0, qr.Length);
             EscPos_Align(ms, 0);
-
-            // ----- Ibpt / rodapé / PIX / pacote (opcionais conforme seu modelo) -----
-            //if (invoice.TotalTaxInfo > 0)
-            //    Writeln(ms, $"Informação dos Tributos Totais Incidentes: R$ {invoice.TotalTaxInfo:N2}", COLS);
 
 
             EscPos_Feed(ms, 3);
@@ -731,12 +791,65 @@ public partial class ConsumerSalePage : ContentPage
 
     static void Writeln(Stream s, string text, int width = 48)
     {
+        // Sanitiza para ASCII antes de imprimir
+        text = ToAsciiEscPos(text);
+
+
         var bytes = Enc1252.GetBytes(text ?? "");
         s.Write(bytes, 0, bytes.Length);
         //s.Write(new byte[] { 0x0A }, 0, 1);
         // avança bem pouco (10 dots)
-        s.Write(new byte[] { 0x1B, 0x33, 10, 0x0A }, 0, 4);
+        //s.Write(new byte[] { 0x1B, 0x33, 10, 0x0A }, 0, 4);
+        //s.Write(new byte[] { 0x1B, 0x33, 8, 0x0A }, 0, 4); // mais compacto
+        s.Write(new byte[] { 0x1B, 0x33, 6, 0x0A }, 0, 4); // bem compacto
+
     }
+
+
+    static string ToAsciiEscPos(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+
+        // 1) Normaliza e remove diacríticos (acentos)
+        string norm = text.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(norm.Length);
+
+        foreach (var ch in norm)
+        {
+            var cat = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (cat == UnicodeCategory.NonSpacingMark)
+                continue; // descarta acento
+            sb.Append(ch);
+        }
+
+        // 2) Recompõe e aplica mapeamentos comuns para ESC/POS
+        string s = sb.ToString().Normalize(NormalizationForm.FormC)
+            .Replace('’', '\'')
+            .Replace('‘', '\'')
+            .Replace('“', '"')
+            .Replace('”', '"')
+            .Replace('–', '-')  // en dash
+            .Replace('—', '-')  // em dash
+            .Replace('•', '*')
+            .Replace('º', 'o')
+            .Replace('ª', 'a')
+            // Alguns modelos “comem” o símbolo de moeda; se preferir, troque por “R$”
+            .Replace('€', 'E')
+            .Replace('£', 'L')
+            .Replace('¥', 'Y')
+            .Replace('₩', 'W');
+
+        // 3) Filtra para ASCII imprimível (32..126). Troca fora disso por espaço
+        var outSb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (c >= 32 && c <= 126) outSb.Append(c);
+            else outSb.Append(' ');
+        }
+        return outSb.ToString();
+    }
+
+
 
     static IEnumerable<string> Wrap(string text, int width)
     {
@@ -808,6 +921,95 @@ public partial class ConsumerSalePage : ContentPage
 
     #endregion  Impressão NFC-e via ESC/POS
 
+    private async void OnCadastrarClienteClicked(object sender, EventArgs e)
+    {
+        string cpf = entryCustomerCpf.Text?.Trim();
+
+        if (string.IsNullOrWhiteSpace(cpf))
+        {
+            await _toastService.ShowToast("Informe um CPF para cadastrar.");
+            return;
+        }
+
+        // aqui você chama sua lógica de cadastro
+        // por exemplo: abre uma nova página ou envia para API
+        //await Navigation.PushAsync(new CustomerRegistrationPage(cpf));
+    }
+
+    private void OnCpfCompleted(object sender, EventArgs e)
+    {
+        validarCPF();
+    }
+
+    private void OnCpfUnfocused(object sender, FocusEventArgs e)
+    {
+        validarCPF();
+    }
+
+    private async void validarCPF()
+    {
+        var cpf = entryCustomerCpf.Text?.Trim();
+        if (string.IsNullOrEmpty(cpf))
+        {
+            entryProductCode.Focus(); // não valida se estiver vazio
+            return;
+        }
+
+        if (!IsValidCpf(cpf))
+        {
+            // limpa o campo para não ficar preso em loop
+            entryCustomerCpf.Text = string.Empty;
+
+            await DisplayAlert("CPF inválido", "Por favor, informe um CPF válido.", "OK");
+            entryCustomerCpf.Focus();
+        }
+        else
+        {
+            // se válido, formata
+            entryCustomerCpf.Text = MaskCpf(cpf);
+
+
+            // joga o foco no código do produto
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                entryProductCode.Focus();
+            });
+        }
+    }
+
+
+    private static string OnlyDigits(string input) =>
+        new string(input.Where(char.IsDigit).ToArray());
+
+    private static bool IsValidCpf(string cpf)
+    {
+        cpf = OnlyDigits(cpf);
+        if (cpf.Length != 11) return false;
+        if (cpf.Distinct().Count() == 1) return false; // todos iguais
+
+        int[] mult1 = { 10, 9, 8, 7, 6, 5, 4, 3, 2 };
+        int[] mult2 = { 11, 10, 9, 8, 7, 6, 5, 4, 3, 2 };
+
+        string temp = cpf.Substring(0, 9);
+        int sum = 0;
+        for (int i = 0; i < 9; i++) sum += int.Parse(temp[i].ToString()) * mult1[i];
+        int resto = sum % 11;
+        int dig1 = resto < 2 ? 0 : 11 - resto;
+
+        temp += dig1;
+        sum = 0;
+        for (int i = 0; i < 10; i++) sum += int.Parse(temp[i].ToString()) * mult2[i];
+        resto = sum % 11;
+        int dig2 = resto < 2 ? 0 : 11 - resto;
+
+        return cpf.EndsWith(dig1.ToString() + dig2.ToString());
+    }
+
+    private static string MaskCpf(string cpf)
+    {
+        cpf = OnlyDigits(cpf);
+        return Convert.ToUInt64(cpf).ToString(@"000\.000\.000\-00");
+    }
 
 
 

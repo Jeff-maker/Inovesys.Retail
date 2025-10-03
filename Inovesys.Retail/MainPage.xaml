@@ -2,80 +2,114 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="Inovesys.Retail.MainPage"
+             x:Name="MainPageRoot"
              Title="Menu Principal">
 
-    <ScrollView>
-        <VerticalStackLayout Padding="20" Spacing="15">
+    <!-- Grid raiz para sobrepor overlay de busy -->
+    <Grid>
 
-            <Label Text="Início"
-                   FontAttributes="Bold"
-                   FontSize="22"
-                   HorizontalOptions="Center" />
+        <!-- ===== CONTEÚDO NORMAL ===== -->
+        <Grid Padding="20" RowSpacing="20" ColumnSpacing="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-            <Grid ColumnSpacing="20" RowSpacing="20" Padding="10">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <!-- Login -->
-                <Border Grid.Row="0" Grid.Column="0"
-            Stroke="LightGray"
-            StrokeShape="RoundRectangle 10"
-            Padding="10">
-                    <VerticalStackLayout>
-                        <Label Text="🔐" FontSize="32" HorizontalOptions="Center" />
-                        <Button Text="Login"
-                    Clicked="OnLoginClicked"
-                    HorizontalOptions="Center" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <!-- Venda Consumidor -->
-                <Border Grid.Row="0" Grid.Column="1"
-            Stroke="LightGray"
-            StrokeShape="RoundRectangle 10"
-            Padding="10">
-                    <VerticalStackLayout>
-                        <Label Text="🛒" FontSize="32" HorizontalOptions="Center" />
-                        <Button Text="Venda Consumidor"
-                    Clicked="OnConsumerSaleClicked"
-                    HorizontalOptions="Center" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <!-- Sincronizar Todas -->
-                <Border Grid.Row="1" Grid.Column="0"
-                Stroke="LightGray"
-                    StrokeShape="RoundRectangle 10"
-                    Padding="10">
-                    <VerticalStackLayout>
-                        <Label Text="🔁" FontSize="32" HorizontalOptions="Center" />
-                        <Button Text="Sincronizar Todas"
-                    Clicked="OnSyncAllClicked"
-                    HorizontalOptions="Center" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <!-- Configurações -->
-                <Border Grid.Row="1" Grid.Column="2"
+            <!-- Login -->
+            <Border Grid.Row="0" Grid.Column="0"
                     Stroke="LightGray"
                     StrokeShape="RoundRectangle 10"
-                    Padding="10">
-                    <VerticalStackLayout>
-                        <Label Text="⚙️" FontSize="32" HorizontalOptions="Center" />
-                        <Button Text="Configurações"
-                    Clicked="OnSettingsClicked"
-                    HorizontalOptions="Center" />
-                    </VerticalStackLayout>
-                </Border>
-            </Grid>
+                    Padding="20">
+                <VerticalStackLayout VerticalOptions="CenterAndExpand"
+                                     HorizontalOptions="CenterAndExpand"
+                                     Spacing="10">
+                    <Label Text="🔐" FontSize="48" HorizontalOptions="Center" />
+                    <Button Text="Login"
+                            FontSize="22"
+                            Clicked="OnLoginClicked"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="EndAndExpand"/>
+                </VerticalStackLayout>
+            </Border>
 
-        </VerticalStackLayout>
-    </ScrollView>
+            <!-- Venda Consumidor -->
+            <Border Grid.Row="0" Grid.Column="1"
+                    Stroke="LightGray"
+                    StrokeShape="RoundRectangle 10"
+                    Padding="20">
+                <VerticalStackLayout VerticalOptions="CenterAndExpand"
+                                     HorizontalOptions="CenterAndExpand"
+                                     Spacing="10">
+                    <Label Text="🛒" FontSize="48" HorizontalOptions="Center" />
+                    <Button Text="Venda Consumidor"
+                            FontSize="22"
+                            Clicked="OnConsumerSaleClicked"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="EndAndExpand"/>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Sincronizar -->
+            <Border Grid.Row="1" Grid.Column="0"
+                    Stroke="LightGray"
+                    StrokeShape="RoundRectangle 10"
+                    Padding="20">
+                <VerticalStackLayout VerticalOptions="CenterAndExpand"
+                                     HorizontalOptions="CenterAndExpand"
+                                     Spacing="10">
+                    <Label Text="🔁" FontSize="48" HorizontalOptions="Center" />
+                    <Button Text="Sincronizar"
+                            FontSize="22"
+                            Clicked="OnSyncAllClicked"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="EndAndExpand"/>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Configurações -->
+            <Border Grid.Row="1" Grid.Column="1"
+                    Stroke="LightGray"
+                    StrokeShape="RoundRectangle 10"
+                    Padding="20">
+                <VerticalStackLayout VerticalOptions="CenterAndExpand"
+                                     HorizontalOptions="CenterAndExpand"
+                                     Spacing="10">
+                    <Label Text="⚙️" FontSize="48" HorizontalOptions="Center" />
+                    <Button Text="Configurações"
+                            FontSize="22"
+                            Clicked="OnSettingsClicked"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="EndAndExpand"/>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+
+        <!-- ===== OVERLAY DE BUSY ===== -->
+        <Grid IsVisible="{Binding Source={x:Reference MainPageRoot}, Path=IsBusy}"
+              BackgroundColor="#66000000">
+
+            <VerticalStackLayout VerticalOptions="Center"
+                                 HorizontalOptions="Center"
+                                 Spacing="12"
+                                 Padding="20">
+
+                <!-- Spinner -->
+                <ActivityIndicator IsRunning="True"
+                                   WidthRequest="56"
+                                   HeightRequest="56"/>
+
+                <!-- Texto -->
+                <Label Text="Aguarde, sincronizando..."
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="White"
+                       HorizontalOptions="Center"/>
+            </VerticalStackLayout>
+        </Grid>
+
+    </Grid>
 </ContentPage>
