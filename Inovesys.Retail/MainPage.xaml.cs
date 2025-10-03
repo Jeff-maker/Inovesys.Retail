@@ -59,6 +59,7 @@ namespace Inovesys.Retail
                     await _syncService.SyncEntitiesAsync<Material>("materials", "material", ignoreLastChange: false);
                     await _syncService.SyncEntitiesAsync<MaterialPrice>("material-prices", "materialprice", ignoreLastChange: false);
                     await _syncService.SyncEntitiesAsync<State>("states", "state", ignoreLastChange: false);
+                    await _syncService.SyncEntitiesAsync<Ncm>("ncms", "ncm", ignoreLastChange: false);
 
                     // Precisa voltar para a UI thread para mexer em IsBusy ou exibir alerta
                     await MainThread.InvokeOnMainThreadAsync(async () =>

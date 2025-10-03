@@ -50,7 +50,7 @@
 	<!-- 🔐 Release: COM assinatura (thumbprint) -->
 	<PropertyGroup Condition="'$(Configuration)'=='Release'">
 		<AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
-		<PackageCertificateThumbprint>85E104619C88E053BFA5539D92B3F40C9C5DE603</PackageCertificateThumbprint>
+    <PackageCertificateThumbprint>DDA5E617BF01C5B554DA7CF4B0ECD8FFAB2629F0</PackageCertificateThumbprint>
 	</PropertyGroup>
 
 	<ItemGroup>
