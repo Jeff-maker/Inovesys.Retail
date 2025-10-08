@@ -9,14 +9,17 @@ namespace Inovesys.Retail
         private readonly ToastService _toast;
         private readonly SyncService _syncService;
 
-         // roda auto-sync só uma vez por sessão
+        private LiteDbService _db;
+
+        // roda auto-sync só uma vez por sessão
         private bool _didAutoSync;
 
-        public MainPage(SyncService syncService, ToastService toast )
+        public MainPage(SyncService syncService, ToastService toast, LiteDbService liteDatabase)
         {
             InitializeComponent();
             _syncService = syncService;
             _toast = toast;
+            _db = liteDatabase;
         }
 
         private async void OnSyncClicked(object sender, EventArgs e)
@@ -40,6 +43,7 @@ namespace Inovesys.Retail
             if (_didAutoSync) return;      // evita rodar toda vez que voltar pra MainPage
             _didAutoSync = true;
 
+
             await SyncAllAsync(showToastOnSuccess: false); // silencioso (ou true se quiser)
         }
 
@@ -48,6 +52,17 @@ namespace Inovesys.Retail
         // ============ Núcleo da sincronização ============
         private async Task SyncAllAsync(bool showToastOnSuccess)
         {
+
+            // ClientId atual (se aplicável às entidades locais)
+            var user = _db.GetCollection<UserConfig>("user_config").FindById("CURRENT");
+
+            if(user == null || string.IsNullOrEmpty(user.Token))
+            {
+                // Usuário não logado, não faz sync
+                return;
+            }
+
+
             if (IsBusy) return;
 
             try
