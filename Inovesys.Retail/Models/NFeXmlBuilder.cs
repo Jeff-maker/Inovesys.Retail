@@ -195,7 +195,6 @@ namespace Inovesys.Retail.Models
         private void AddReceiverInfo(XmlElement infNFe, bool isHomologacao = true)
         {
 
-
             if (_invoice == null)
             {
                 return;
