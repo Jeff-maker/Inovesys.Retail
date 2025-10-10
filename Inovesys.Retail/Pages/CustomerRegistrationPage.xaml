@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Inovesys.Retail.Pages.CustomerRegistrationPage"
+             Title="Cadastro de Cliente"
+             xmlns:behaviors="clr-namespace:Inovesys.Retail.Util.Behaviors">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="10">
+
+            <Label Text="Cadastro de Cliente"
+                   FontSize="22"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center" />
+
+            <!-- Identificação -->
+            <Label Text="Nome completo" />
+            <Entry x:Name="NameEntry">
+                <Entry.Behaviors>
+                    <behaviors:UpperCaseBehavior />
+                </Entry.Behaviors>
+            </Entry>
+
+            <Label Text="Documento (CPF/CNPJ)" />
+            <Entry x:Name="DocumentEntry" IsEnabled="False" />
+
+            <Label Text="Tipo de documento (1 = CPF, 2 = CNPJ)" />
+            <Entry x:Name="DocumentTypeEntry" Keyboard="Numeric" IsEnabled="False" Text="1"/>
+
+            <!-- Contato -->
+            <Label Text="E-mail" />
+            <Entry x:Name="EmailEntry" Keyboard="Email" />
+
+            <!-- Preferência de envio -->
+            <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                <Label Text="Deseja receber o cupom por e-mail?" 
+                       VerticalOptions="Center" />
+                <Switch x:Name="SendCouponSwitch" />
+            </HorizontalStackLayout>
+
+            <!-- Endereço -->
+            <Label Text="CEP" />
+            <Entry x:Name="CepEntry" Keyboard="Numeric" />
+
+            <Label Text="Logradouro" />
+            <Entry x:Name="StreetEntry">
+                <Entry.Behaviors>
+                    <behaviors:UpperCaseBehavior />
+                </Entry.Behaviors>
+            </Entry>
+
+            <Label Text="Número" />
+            <Entry x:Name="NumberEntry" Keyboard="Numeric" />
+
+            <Label Text="Complemento" />
+            <Entry x:Name="ComplementEntry">
+                <Entry.Behaviors>
+                    <behaviors:UpperCaseBehavior />
+                </Entry.Behaviors>
+            </Entry>
+
+            <Label Text="Bairro" />
+            <Entry x:Name="DistrictEntry">
+                <Entry.Behaviors>
+                    <behaviors:UpperCaseBehavior />
+                </Entry.Behaviors>
+            </Entry>
+
+            <Label Text="Cidade" />
+            <Entry x:Name="CityEntry">
+                <Entry.Behaviors>
+                    <behaviors:UpperCaseBehavior />
+                </Entry.Behaviors>
+            </Entry>
+
+            <Label Text="UF (ex.: SP)" />
+            <Entry x:Name="StateEntry" MaxLength="2">
+                <Entry.Behaviors>
+                    <behaviors:UpperCaseBehavior />
+                </Entry.Behaviors>
+            </Entry>
+
+            <!-- Botão de ação -->
+            <Button Text="Salvar Cliente"
+                    Clicked="OnSaveClicked"
+                    BackgroundColor="#4CAF50"
+                    TextColor="White"
+                    CornerRadius="8"
+                    HeightRequest="50"
+                    Margin="0,10,0,0" />
+
+            <Label x:Name="StatusLabel"
+                   Text=""
+                   TextColor="Gray"
+                   HorizontalOptions="Center"
+                   FontSize="14" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

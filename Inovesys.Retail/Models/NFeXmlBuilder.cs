@@ -31,10 +31,12 @@ namespace Inovesys.Retail.Models
             _company = company;
         }
 
-        public (XmlDocument Xml, string QrCode,string dateHoraEmissao) Build()
+        public (XmlDocument Xml, string QrCode,string dateHoraEmissao,  Exception? Error) Build()
         {
 
-            var root = _xmlDoc.CreateElement("NFe");
+            try
+            {
+                var root = _xmlDoc.CreateElement("NFe");
 
             root.SetAttribute("xmlns", "http://www.portalfiscal.inf.br/nfe");
 
@@ -89,7 +91,16 @@ namespace Inovesys.Retail.Models
             //SignXmlDocument(_invoice.NfKey, ref xmlSemmIdentacao, _invoice.Company.CertificateId, _dbContext, _invoice.ClientId, _helpers, dateHoraEmissa);
             SignXmlDocument(ref xmlSemmIdentacao, _environmentSefaz, dateHoraEmissao, out string QrCode);
 
-            return (xmlSemmIdentacao, QrCode , dateHoraEmissao);
+            return (xmlSemmIdentacao, QrCode , dateHoraEmissao , null);
+
+            }
+            catch (Exception ex)
+            {
+                // Aqui você pode logar o erro se quiser
+                // _logger.LogError(ex, "Erro ao gerar XML da NFe.");
+
+                return (null, null, null, ex);
+            }
         }
               
 
@@ -703,6 +714,28 @@ namespace Inovesys.Retail.Models
                                  .Where(tax => tax.TaxTypeId == "ICMS")
                                  .Sum(tax => tax.Value));
 
+
+                // Antes de chamar GenerateQRCodeV2:
+                if (_invoice is null) throw new InvalidOperationException("_invoice não instanciado.");
+                var nfKey = Require(_invoice.NfKey, nameof(_invoice.NfKey));
+
+                if (_branche is null) throw new InvalidOperationException("_branche não instanciado.");
+                var csc = Require(_branche.CscSefaz, nameof(_branche.CscSefaz));
+
+                // Se IdTokenSefaz for obrigatório:
+                var idToken = _branche.IdTokenSefaz?.ToString()
+                             ?? throw new ArgumentNullException(nameof(_branche.IdTokenSefaz), "IdTokenSefaz é obrigatório.");
+
+
+
+
+
+
+
+
+
+
+
                 string qrCodeContent = GenerateQRCodeV2(chaveAcesso: _invoice.NfKey,
                                                         cpfCnpjConsumidor: cpfCnpjConsumidor,
                                                         valorTotal: valorTotal,
@@ -778,6 +811,13 @@ namespace Inovesys.Retail.Models
         {
             public override Encoding Encoding => new UTF8Encoding(false);
         }
+
+        private static string Require(string value, string name)
+                => !string.IsNullOrWhiteSpace(value) ? value
+                   : throw new ArgumentNullException(name, $"{name} não pode ser nulo/vazio.");
+
+       
+
 
     }
 }

@@ -31,6 +31,7 @@ public static class MauiProgramExtensions
         builder.Services.AddTransient<LoginPage>();
         builder.Services.AddTransient<SettingsPage>();
         builder.Services.AddTransient<ConsumerSalePage>();
+        builder.Services.AddTransient<CustomerRegistrationPage>();
 
         builder.Services.AddSingleton<LiteDbService>();
         builder.Services.AddSingleton<SyncService>();

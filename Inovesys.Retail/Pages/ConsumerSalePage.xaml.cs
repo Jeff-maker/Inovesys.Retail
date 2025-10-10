@@ -158,6 +158,15 @@ public partial class ConsumerSalePage : ContentPage
 
             var xmlBuilder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company).Build();
 
+            if (xmlBuilder.Error != null)
+            {
+                Console.WriteLine($"Erro ao gerar XML: {xmlBuilder.Error.Message}");
+                // Opcional: detalhar exceção interna
+                if (xmlBuilder.Error.InnerException != null)
+                    await _toastService.ShowToast(xmlBuilder.Error.InnerException.Message);
+                return (false, null);
+            }
+
             var signedXml = xmlBuilder.Xml.InnerXml;
             var qrCode = xmlBuilder.QrCode;
 
@@ -341,10 +350,6 @@ public partial class ConsumerSalePage : ContentPage
             await _toastService.ShowToast(NCFE.ErrorMessage);
             return;
         }
-
-
-
-
 
         // CPF no XML: se o campo estiver preenchido e válido, grava no Invoice
         var cpfDigits = OnlyDigits(entryCustomerCpf.Text?.Trim() ?? "");
@@ -923,6 +928,8 @@ public partial class ConsumerSalePage : ContentPage
 
     private async void OnCadastrarClienteClicked(object sender, EventArgs e)
     {
+        _fromButton = true; // marca que o foco saiu por causa do clique
+
         string cpf = entryCustomerCpf.Text?.Trim();
 
         if (string.IsNullOrWhiteSpace(cpf))
@@ -931,16 +938,23 @@ public partial class ConsumerSalePage : ContentPage
             return;
         }
 
+
+        if (!IsValidCpf(cpf))
+        {
+            await DisplayAlert("CPF inválido", "Por favor, informe um CPF válido.", "OK");
+            return;
+        }
+
         // aqui você chama sua lógica de cadastro
         // por exemplo: abre uma nova página ou envia para API
-        //await Navigation.PushAsync(new CustomerRegistrationPage(cpf));
+        await Navigation.PushAsync(new CustomerRegistrationPage(cpf, _db));
     }
 
     private void OnCpfCompleted(object sender, EventArgs e)
     {
         validarCPF();
     }
-
+    private bool _fromButton = false;
     private void OnCpfUnfocused(object sender, FocusEventArgs e)
     {
         validarCPF();

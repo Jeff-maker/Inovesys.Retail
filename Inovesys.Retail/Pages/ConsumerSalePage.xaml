@@ -76,7 +76,7 @@
                        HorizontalOptions="Fill" />
 
                 <Button Grid.Column="1"
-                    Text="Cadastrar"
+                    Text="CADASTRO"
                     BackgroundColor="DodgerBlue"
                     TextColor="White"
                     Padding="12,6"
