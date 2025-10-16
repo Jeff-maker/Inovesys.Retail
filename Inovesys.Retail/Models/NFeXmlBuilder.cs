@@ -1,6 +1,7 @@
 ﻿using Inovesys.Retail.Entities;
 using Inovesys.Retail.Services;
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography.Xml;
@@ -31,67 +32,68 @@ namespace Inovesys.Retail.Models
             _company = company;
         }
 
-        public (XmlDocument Xml, string QrCode,string dateHoraEmissao,  Exception? Error) Build()
+        public (XmlDocument Xml, string QrCode, string dateHoraEmissao, Exception? Error) Build()
         {
 
             try
             {
                 var root = _xmlDoc.CreateElement("NFe");
 
-            root.SetAttribute("xmlns", "http://www.portalfiscal.inf.br/nfe");
+                root.SetAttribute("xmlns", "http://www.portalfiscal.inf.br/nfe");
 
-            var infNFe = _xmlDoc.CreateElement("infNFe");
+                var infNFe = _xmlDoc.CreateElement("infNFe");
 
-            infNFe.SetAttribute("versao", "4.00");
+                infNFe.SetAttribute("versao", "4.00");
 
-            infNFe.SetAttribute("Id", $"NFe{_invoice.NfKey}");
+                infNFe.SetAttribute("Id", $"NFe{_invoice.NfKey}");
 
-            var dateHoraEmissao = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:sszzz");
+                var dateHoraEmissao = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:sszzz");
 
-            AddBasicInfo(infNFe, _environmentSefaz, dateHoraEmissao);
+                AddBasicInfo(infNFe, _environmentSefaz, dateHoraEmissao);
 
-            AddEmitterInfo(infNFe);
+                AddEmitterInfo(infNFe);
 
-            AddReceiverInfo(infNFe, _environmentSefaz == "2");
+                AddReceiverInfo(infNFe, _environmentSefaz == "2");
 
-            AddItemsInfo(infNFe, _environmentSefaz);
+                AddItemsInfo(infNFe, _environmentSefaz);
 
-            AddTotalInfo(infNFe);
+                AddTotalInfo(infNFe);
 
-            AddTransportInfo(infNFe);
+                AddTransportInfo(infNFe);
 
-            AddPaymentInfo(infNFe);
+                AddPaymentInfo(infNFe);
 
-            var infAdic = _xmlDoc.CreateElement("infAdic");
+                if (!string.IsNullOrWhiteSpace(_invoice.AdditionalInfo))
+                {
+                    var infAdic = _xmlDoc.CreateElement("infAdic");
+                    infAdic.AppendChild(CreateElement("infCpl", _invoice.AdditionalInfo));
+                    infNFe.AppendChild(infAdic);
+                }
 
-            infAdic.AppendChild(CreateElement("infCpl", _invoice.AdditionalInfo));
+                var infRespTec = _xmlDoc.CreateElement("infRespTec");
 
-            infNFe.AppendChild(infAdic);
+                infRespTec.AppendChild(CreateElement("CNPJ", "12277179000108"));
 
-            var infRespTec = _xmlDoc.CreateElement("infRespTec");
+                infRespTec.AppendChild(CreateElement("xContato", "Responsável Técnico"));
 
-            infRespTec.AppendChild(CreateElement("CNPJ", "12277179000108"));
+                infRespTec.AppendChild(CreateElement("email", "tecnico@empresa.com"));
 
-            infRespTec.AppendChild(CreateElement("xContato", "Responsável Técnico"));
+                infRespTec.AppendChild(CreateElement("fone", "11999999999"));
 
-            infRespTec.AppendChild(CreateElement("email", "tecnico@empresa.com"));
+                infNFe.AppendChild(infRespTec);
 
-            infRespTec.AppendChild(CreateElement("fone", "11999999999"));
+                root.AppendChild(infNFe);
 
-            infNFe.AppendChild(infRespTec);
+                _xmlDoc.AppendChild(root);
 
-            root.AppendChild(infNFe);
+                var xmlSemmIdentacao = new XmlDocument { PreserveWhitespace = true };
 
-            _xmlDoc.AppendChild(root);
+                xmlSemmIdentacao.LoadXml(_xmlDoc.InnerXml);
 
-            var xmlSemmIdentacao = new XmlDocument { PreserveWhitespace = true };
+                //SignXmlDocument(_invoice.NfKey, ref xmlSemmIdentacao, _invoice.Company.CertificateId, _dbContext, _invoice.ClientId, _helpers, dateHoraEmissa);
+                SignXmlDocument(ref xmlSemmIdentacao, _environmentSefaz, dateHoraEmissao, out string QrCode);
 
-            xmlSemmIdentacao.LoadXml(_xmlDoc.InnerXml);
-
-            //SignXmlDocument(_invoice.NfKey, ref xmlSemmIdentacao, _invoice.Company.CertificateId, _dbContext, _invoice.ClientId, _helpers, dateHoraEmissa);
-            SignXmlDocument(ref xmlSemmIdentacao, _environmentSefaz, dateHoraEmissao, out string QrCode);
-
-            return (xmlSemmIdentacao, QrCode , dateHoraEmissao , null);
+                return (xmlSemmIdentacao, QrCode, dateHoraEmissao, null);
 
             }
             catch (Exception ex)
@@ -102,7 +104,7 @@ namespace Inovesys.Retail.Models
                 return (null, null, null, ex);
             }
         }
-              
+
 
         private void AddBasicInfo(XmlElement infNFe, string ambiente, string dateHoraEmiss)
         {
@@ -210,8 +212,8 @@ namespace Inovesys.Retail.Models
             {
                 return;
             }
-                        
-            if (_invoice.Customer != null )
+
+            if (_invoice.Customer != null)
             {
 
                 var dest = _xmlDoc.CreateElement("dest");
@@ -272,12 +274,31 @@ namespace Inovesys.Retail.Models
 
             }
 
-            
+
 
         }
 
         private void AddItemsInfo(XmlElement infNFe, string ambiente)
         {
+
+            string crtCode = string.Empty;
+
+            switch (_branche.TaxRegime)
+            {
+                case "SimplesNacional":
+                    crtCode = "1";
+                    break;
+                case "SimplesNacionalExcesso":
+                    crtCode = "2";
+                    break;
+                case "Normal":
+                    crtCode = "3";
+                    break;
+                default:
+                    throw new InvalidOperationException($"Regime tributário inválido: {_branche.TaxRegime}");
+            }
+
+
             foreach (var item in _invoice.Items)
             {
                 var det = _xmlDoc.CreateElement("det");
@@ -322,14 +343,25 @@ namespace Inovesys.Retail.Models
 
                 var icms = _xmlDoc.CreateElement("ICMS");
 
-                var icms40 = _xmlDoc.CreateElement("ICMS" + item.CstIcmsId);
 
-                icms40.AppendChild(CreateElement("orig", "0"));
+                if (crtCode == "1")
+                {
+                    var ICMSSN102 = _xmlDoc.CreateElement("ICMSSN102");
+                    ICMSSN102.AppendChild(CreateElement("orig", "0"));
+                    ICMSSN102.AppendChild(CreateElement("CSOSN", "400"));
+                    icms.AppendChild(ICMSSN102);
+                }
+                else
+                {
+                    var icmsAny = _xmlDoc.CreateElement("ICMS" + item.CstIcmsId);
 
-                icms40.AppendChild(CreateElement("CST", item.CstIcmsId?.ToString() ?? string.Empty));
+                    icmsAny.AppendChild(CreateElement("orig", "0"));
 
-                icms.AppendChild(icms40);
+                    icmsAny.AppendChild(CreateElement("CST", item.CstIcmsId?.ToString() ?? string.Empty));
 
+                    icms.AppendChild(icmsAny);
+                }
+                
                 imposto.AppendChild(icms);
 
                 var pis = _xmlDoc.CreateElement("PIS");
@@ -634,7 +666,7 @@ namespace Inovesys.Retail.Models
             }
         }
 
-        private void SignXmlDocument(ref XmlDocument xmlDoc, string sefazEnviroment, string dataHoraEmissao,out string qrCodeValue)
+        private void SignXmlDocument(ref XmlDocument xmlDoc, string sefazEnviroment, string dataHoraEmissao, out string qrCodeValue)
         {
             try
             {
@@ -714,7 +746,6 @@ namespace Inovesys.Retail.Models
                                  .Where(tax => tax.TaxTypeId == "ICMS")
                                  .Sum(tax => tax.Value));
 
-
                 // Antes de chamar GenerateQRCodeV2:
                 if (_invoice is null) throw new InvalidOperationException("_invoice não instanciado.");
                 var nfKey = Require(_invoice.NfKey, nameof(_invoice.NfKey));
@@ -725,16 +756,6 @@ namespace Inovesys.Retail.Models
                 // Se IdTokenSefaz for obrigatório:
                 var idToken = _branche.IdTokenSefaz?.ToString()
                              ?? throw new ArgumentNullException(nameof(_branche.IdTokenSefaz), "IdTokenSefaz é obrigatório.");
-
-
-
-
-
-
-
-
-
-
 
                 string qrCodeContent = GenerateQRCodeV2(chaveAcesso: _invoice.NfKey,
                                                         cpfCnpjConsumidor: cpfCnpjConsumidor,
@@ -816,7 +837,7 @@ namespace Inovesys.Retail.Models
                 => !string.IsNullOrWhiteSpace(value) ? value
                    : throw new ArgumentNullException(name, $"{name} não pode ser nulo/vazio.");
 
-       
+
 
 
     }

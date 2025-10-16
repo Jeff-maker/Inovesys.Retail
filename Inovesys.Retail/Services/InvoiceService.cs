@@ -101,9 +101,9 @@ namespace Inovesys.Retail.Services
                     Protocol = string.Empty,
                     NfeStatus = "NO_SEND",
                     LastUpdate = DateTime.UtcNow,
-                    LastChange = DateTime.UtcNow
+                    LastChange = DateTime.UtcNow,
+                    TotalAmount = items.Items.Sum(i => i.TotalAmount)
                 };
-
 
                 // ===== vincula taxas aos itens por (InvoiceId, ItemNumber) =====
                 var taxesByItem = items.Taxes

@@ -52,6 +52,17 @@
 		<AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
     <PackageCertificateThumbprint>DDA5E617BF01C5B554DA7CF4B0ECD8FFAB2629F0</PackageCertificateThumbprint>
 	</PropertyGroup>
+	<ItemGroup>
+	  <Content Remove="Assets\Images\Icone-Inovesys.png" />
+	</ItemGroup>
+	<ItemGroup>
+	  <None Remove="Assets\BadgeLogo.scale-150.png" />
+	  <None Remove="Assets\Square44x44Logo.scale-100.png" />
+	  <None Remove="Assets\Square71x71Logo.scale-200.png" />
+	  <None Remove="Assets\Square71x71Logo.scale-400.png" />
+	  <None Remove="Assets\StoreLogo.scale-150.png" />
+	  <None Remove="Assets\StoreLogo.scale-200.png" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Maui" Version="12.1.0" />

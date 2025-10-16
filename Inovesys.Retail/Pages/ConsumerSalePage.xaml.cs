@@ -270,8 +270,6 @@ public partial class ConsumerSalePage : ContentPage
             ? _items.Max(i => i.Id) + 1
             : 1;
 
-
-
         _items.Add(new ConsumerSaleItem
         {
             Id = nextItemNumber,
