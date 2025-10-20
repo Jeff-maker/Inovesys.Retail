@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Serialization;
 
 namespace Inovesys.Retail.Pages;
@@ -120,8 +121,9 @@ public partial class ConsumerSalePage : ContentPage
             }
         }
 
+        await CheckAndSendContingencyAsync();   // <— novo
         await CheckAndSendAuthorizedInvoicesAsync();
-
+        
         await Task.Delay(100);
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -176,10 +178,12 @@ public partial class ConsumerSalePage : ContentPage
 
             if (result.Success)
             {
+
+
                 invoice.NfeStatus = "AUTORIZADA";
                 invoice.Protocol = result.ProtocolXml;
-                invoice.Nfe = invoice.Nfe;
-                // xmlString = string com o XML que você recebeu
+
+                // Desserializa o protocolo para pegar as datas e número
                 var serializer = new XmlSerializer(typeof(ProtNFe));
                 using var reader = new StringReader(result.ProtocolXml);
                 var resultx = (ProtNFe)serializer.Deserialize(reader);
@@ -189,12 +193,42 @@ public partial class ConsumerSalePage : ContentPage
                 invoice.IssueDate = DateTime.Parse(xmlBuilder.dateHoraEmissao);
                 invoice.AuthorizationDate = resultx.InfProt.DhRecbto;
                 invoice.Protocol = resultx.InfProt.NProt.ToString();
-                invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(signedXml));
 
+                // 🔹 Concatena o XML assinado + protocolo
+                string xmlAutorizado =
+                    $"<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+                    "<nfeProc versao=\"4.00\" xmlns=\"http://www.portalfiscal.inf.br/nfe\">" +
+                    signedXml + result.ProtocolXml +
+                    "</nfeProc>";
+
+                invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(xmlAutorizado));
+
+                // Atualiza no banco
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
 
                 return (true, qrCode);
+
+
+                //invoice.NfeStatus = "AUTORIZADA";
+                //invoice.Protocol = result.ProtocolXml;
+                //invoice.Nfe = invoice.Nfe;
+                //// xmlString = string com o XML que você recebeu
+                //var serializer = new XmlSerializer(typeof(ProtNFe));
+                //using var reader = new StringReader(result.ProtocolXml);
+                //var resultx = (ProtNFe)serializer.Deserialize(reader);
+
+                //invoice.LastUpdate = DateTime.UtcNow;
+                //invoice.QrCode = qrCode;
+                //invoice.IssueDate = DateTime.Parse(xmlBuilder.dateHoraEmissao);
+                //invoice.AuthorizationDate = resultx.InfProt.DhRecbto;
+                //invoice.Protocol = resultx.InfProt.NProt.ToString();
+                //invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(signedXml));
+
+                //var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+                //invoiceCollection.Update(invoice);
+
+                //return (true, qrCode);
             }
             else
             {
@@ -376,22 +410,35 @@ public partial class ConsumerSalePage : ContentPage
         var send = await EnviarNotaParaSefaz(invoice: post.Invoice);
         if (!send.Success)
         {
-            await _toastService.ShowToast("Erro ao enviar nota fiscal para SEFAZ.");
+            await _toastService.ShowToast("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
+            await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
 
-            return;
-        }
+            _items.Clear();
+            entryQuantity.Text = "1";
+            entryCustomerCpf.Text = string.Empty;
+            MainThread.BeginInvokeOnMainThread(() => entryCustomerCpf.Focus());
+            UpdateTotal();
 
-        Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
-        await printed;
-        if (printed.IsFaulted)
-        {
-            await _toastService.ShowToast("Erro ao imprimir o cupom.");
+            await _toastService.ShowToast("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
+            return; // <<< IMPORTANTE: não envia para retaguarda
+
         }
         else
         {
-            var invoiceCollection = _db.GetCollection<Invoice>("invoice");
-            post.Invoice.Printed = true;
-            invoiceCollection.Update(post.Invoice);
+
+            Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+            await printed;
+            if (printed.IsFaulted)
+            {
+                await _toastService.ShowToast("Erro ao imprimir o cupom.");
+            }
+            else
+            {
+                var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+                post.Invoice.Printed = true;
+                invoiceCollection.Update(post.Invoice);
+            }
+
         }
 
         var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
@@ -638,10 +685,8 @@ public partial class ConsumerSalePage : ContentPage
     {
         try
         {
-
             const int COLS = 42;
             using var ms = new MemoryStream();
-
             EscPos_Reset(ms);
             EscPos_SetCodePage(ms, 0x00, 437);
 
@@ -673,20 +718,20 @@ public partial class ConsumerSalePage : ContentPage
             {
                 var code = !string.IsNullOrWhiteSpace(it.MaterialId) ? it.MaterialId : (it.MaterialId ?? "");
                 var desc = string.IsNullOrWhiteSpace(it.MaterialName) ? code : $"{it.MaterialName}";
+                EscPos_Align(ms, 0);
                 LeftRight(ms, $"{seq:000} {code} {desc}", $"", COLS);
 
                 var un = string.IsNullOrWhiteSpace(it.UnitId) ? "UN" : it.UnitId.ToUpperInvariant();
                 var q = it.Quantity;
                 var unit = it.UnitPrice;
                 var tot = unit * q;
-
-
                 EscPos_Align(ms, 2);
                 Writeln(ms, $"{q:0.##} {un} x R$ {unit:N2} = R$ {tot:N2}", COLS);
-                EscPos_Reset(ms);
-
+                
                 seq++;
             }
+            
+            EscPos_Reset(ms);
 
             Line(ms, COLS);
             LeftRight(ms, "Qtde. total de itens", $"{invoice.Items.Sum(i => i.Quantity):0.##}", COLS);
@@ -746,11 +791,6 @@ public partial class ConsumerSalePage : ContentPage
             {
                 Writeln(ms, $"CONSUMIDOR - CPF {CpfMask((invoice.Customer.Document))}", COLS);
             }
-
-            //if (!string.IsNullOrWhiteSpace(invoice.Customer.AddressId))
-            //    Writeln(ms, invoice.ConsumerAddress, COLS);
-
-            // ----- Dados NFC-e (número/serie/data hora/protocolo/autorização) -----
 
             var dataAut = invoice.AuthorizationDate?.ToString("dd/MM/yyyy HH:mm:ss");
             var dataEmi = invoice.IssueDate.ToString("dd/MM/yyyy HH:mm:ss");
@@ -1021,6 +1061,200 @@ public partial class ConsumerSalePage : ContentPage
     {
         cpf = OnlyDigits(cpf);
         return Convert.ToUInt64(cpf).ToString(@"000\.000\.000\-00");
+    }
+
+
+    private static readonly TimeZoneInfo TzSp = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+
+    private static DateTime NowSp() =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TzSp);
+
+    /// Força DateTime “parede de SP” (sem Kind para não haver conversão automática)
+    private static DateTime SpWall(DateTime dt) =>
+        DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+
+
+    private async Task EmitirEmContingenciaAsync(Invoice invoice, string motivoFalha, string? qrCodeUrl = null)
+    {
+        // (re)carrega itens + tributos (igual você já faz antes do builder)
+        var itemCollection = _db.GetCollection<InvoiceItem>("invoiceitem");
+        var items = itemCollection.Find(i => i.ClientId == invoice.ClientId && i.InvoiceId == invoice.InvoiceId).ToList();
+
+        var taxCollection = _db.GetCollection<InvoiceItemTax>("invoiceitemtax");
+        foreach (var it in items)
+            it.Taxes = taxCollection.Find(t => t.ClientId == invoice.ClientId && t.InvoiceId == invoice.InvoiceId && t.ItemNumber == it.ItemNumber).ToList();
+
+        invoice.Items = items;
+
+        // Monta XML "normal" e converte para contingência (tpEmis=9)
+        var builder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company).Build();
+        if (builder.Error != null) throw builder.Error;
+
+        var xmlDoc = builder.Xml; // XmlDocument assinado do seu builder
+        var agoraSp = NowSp();
+
+        // Ajusta campos de contingência no XML
+        ForcarContingenciaNoXml(xmlDoc, agoraSp, motivoFalha);
+
+        // Atualiza dados da invoice (status e datas em hora de SP “plana”)
+        invoice.NfeStatus = "NO_SEND";               // pendente de envio
+        invoice.Contingency = true;
+        invoice.IssueDate = SpWall(agoraSp);
+        invoice.AuthorizationDate = null;
+        invoice.Protocol = null;
+
+        // guarda XML assinado pós-ajuste
+        var xmlAssinado = xmlDoc.InnerXml;
+        invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(xmlAssinado));
+
+        // QR Code: use do builder se já veio, senão gere/retente
+        var qr = qrCodeUrl ?? builder.QrCode ?? "";
+
+        // Persiste
+        _db.GetCollection<Invoice>("invoice").Update(invoice);
+
+        // Imprime DANFE contingência
+        await ImprimirCupomContingenciaAsync(invoice, qr);
+
+        await _toastService.ShowToast("NFC-e emitida em CONTINGÊNCIA. Enviaremos à SEFAZ quando a conexão voltar.");
+    }
+
+
+    /// Ajusta o XML para contingência: tpEmis=9 + dhCont + xJust
+    private static void ForcarContingenciaNoXml(System.Xml.XmlDocument xml, DateTime dhContSp, string xJust)
+    {
+        var ns = new XmlNamespaceManager(xml.NameTable);
+        ns.AddNamespace("nfe", "http://www.portalfiscal.inf.br/nfe");
+
+        var ide = xml.SelectSingleNode("//nfe:infNFe/nfe:ide", ns) as System.Xml.XmlElement;
+        if (ide == null) throw new InvalidOperationException("Nós <ide> não encontrado no XML.");
+
+        void Upsert(string name, string value)
+        {
+            var n = ide[name];
+            if (n == null) { n = xml.CreateElement(name, ide.NamespaceURI); ide.AppendChild(n); }
+            n.InnerText = value;
+        }
+
+        Upsert("tpEmis", "9");
+        Upsert("dhCont", dhContSp.ToString("yyyy-MM-dd'T'HH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture)); // exige offset
+        Upsert("xJust", string.IsNullOrWhiteSpace(xJust) ? "Falha de comunicação com a SEFAZ" : xJust);
+    }
+
+    private async Task ImprimirCupomContingenciaAsync(Invoice invoice, string qrCodeUrl)
+    {
+        try
+        {
+            const int COLS = 42;
+            using var ms = new MemoryStream();
+            EscPos_Reset(ms);
+            EscPos_SetCodePage(ms, 0x00, 437);
+
+            // Faixa obrigatória
+            EscPos_Align(ms, 1);
+            EscPos_Bold(ms, true);
+            Writeln(ms, "EMITIDA EM CONTINGENCIA", COLS);
+            Writeln(ms, "Aguardando autorizacao da SEFAZ", COLS);
+            EscPos_Bold(ms, false);
+            EscPos_Align(ms, 0);
+
+            // Cabeçalho resumido (reaproveita o mesmo padrão do seu ImprimirCupomViaEscPosAsync)
+            Writeln(ms, $"{_company?.Description}", COLS);
+            Writeln(ms, $"CNPJ: {_branche?.Cnpj}", COLS);
+
+            // Itens, totais, etc. (pode reaproveitar as mesmas funções que você já usa)
+            Line(ms, COLS);
+            LeftRight(ms, "Qtde. total de itens", $"{invoice.Items.Sum(i => i.Quantity):0.##}", COLS);
+
+            var vTotal = invoice.Items.Sum(i => i.UnitPrice * i.Quantity);
+            EscPos_Bold(ms, true);
+            LeftRight(ms, "VALOR TOTAL R$", $"{vTotal:N2}", COLS);
+            EscPos_Bold(ms, false);
+
+            Line(ms, COLS);
+            var dataEmi = invoice.IssueDate.ToString("dd/MM/yyyy HH:mm:ss");
+            Writeln(ms, $"Data de Emissao {dataEmi}", COLS);
+            if (!string.IsNullOrWhiteSpace(invoice.NfKey))
+                Writeln(ms, $"Chave: {Regex.Replace(invoice.NfKey, ".{4}", "$0 ").Trim()}", COLS);
+
+            // QR Code
+            EscPos_Align(ms, 1);
+            var qr = BuildQrCodeEscPos(qrCodeUrl ?? "");
+            ms.Write(qr, 0, qr.Length);
+            EscPos_Align(ms, 0);
+
+            EscPos_Feed(ms, 3);
+            EscPos_Cut(ms);
+
+            var payload = ms.ToArray();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(userConfig.PrinterIp, userConfig.PrinterPort).ConfigureAwait(false);
+            using var stream = client.GetStream();
+
+            var header = Encoding.UTF8.GetBytes((userConfig.PrinterName ?? DefaultPrinterName) + "\n");
+            await stream.WriteAsync(header, 0, header.Length).ConfigureAwait(false);
+            await stream.WriteAsync(payload, 0, payload.Length).ConfigureAwait(false);
+            await stream.FlushAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _toastService.ShowToast($"Falha ao imprimir contingencia: {ex.Message}");
+        }
+    }
+
+    private async Task CheckAndSendContingencyAsync()
+    {
+        var col = _db.GetCollection<Invoice>("invoice");
+        var pendentes = col.Find(i =>
+            i.ClientId == _branche.ClientId &&
+            i.CompanyId == _branche.CompanyId &&
+            i.BrancheId == _branche.Id &&
+            i.NfeStatus == "NO_SEND" &&
+            i.Contingency == true
+        ).ToList();
+
+        if (pendentes.Count == 0) return;
+
+        bool enviarAgora = await DisplayAlert(
+            "Notas em contingencia",
+            $"Existem {pendentes.Count} NFC-e(s) emitidas em contingencia. Deseja enviar agora?",
+            "Sim", "Não");
+
+        if (!enviarAgora) return;
+
+        int ok = 0, fail = 0;
+        foreach (var inv in pendentes)
+        {
+            try
+            {
+                // Usa o AuthorizedXml como fonte (já é o XML assinado com tpEmis=9)
+                var xmlAssinado = Encoding.UTF8.GetString(Convert.FromBase64String(inv.AuthorizedXml));
+                var sefazService = new SefazService(_db, _company);
+
+                var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv);
+                if (result.Success)
+                {
+                    // Atualiza dados de autorização
+                    var serializer = new XmlSerializer(typeof(ProtNFe));
+                    using var reader = new StringReader(result.ProtocolXml);
+                    var p = (ProtNFe)serializer.Deserialize(reader);
+
+                    inv.NfeStatus = "AUTORIZADA";
+                    inv.AuthorizationDate = p.InfProt.DhRecbto;
+                    inv.Protocol = p.InfProt.NProt;
+                    inv.Contingency = false;
+                    inv.LastUpdate = DateTime.UtcNow;
+
+                    col.Update(inv);
+                    ok++;
+                }
+                else { fail++; }
+            }
+            catch { fail++; }
+        }
+
+        await _toastService.ShowToast($"Contingencia -> SEFAZ concluido. Sucesso: {ok}, Falhas: {fail}.");
     }
 
 

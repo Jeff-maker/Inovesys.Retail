@@ -86,6 +86,9 @@ namespace Inovesys.Retail.Entities
         [BsonIgnore]
         public string AdditionalInfo { get; set; } = string.Empty;
 
+        [BsonField("contingency")]
+        public bool Contingency { get; set; }
+
 
     }
 }
