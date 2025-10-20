@@ -134,3 +134,11 @@ Inovesys.Retail.WinUI/MsixContent/*.7z
 *.msixbundle
 *.appx
 *.appxbundle
+
+# Artefatos MSIX/7z
+Inovesys.Retail.WinUI/MsixContent/
+*.7z
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
