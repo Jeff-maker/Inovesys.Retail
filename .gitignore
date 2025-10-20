@@ -6,8 +6,7 @@ obj/
 
 ## User-specific files
 *.user
-*.userosscache
-*.suo
+*.userosscache*.suo
 *.sln.docstates
 *.vsp
 
@@ -111,3 +110,27 @@ TestResults/
 *.rej
 *.bak
 *.log
+
+Inovesys.Retail.WinUI/MsixContent/*.7z
+*.msix *.msixbundle *.appx *.appxbundle
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Artefatos grandes
+Inovesys.Retail.WinUI/MsixContent/*.7z
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
