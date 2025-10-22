@@ -3,6 +3,7 @@ using Inovesys.Infrastructure;
 using Inovesys.Retail.Pages;
 using Inovesys.Retail.Services;
 using Microsoft.Extensions.Logging;
+using zoft.MauiExtensions.Controls;
 
 namespace Inovesys.Retail;
 
@@ -12,12 +13,12 @@ public static class MauiProgramExtensions
 	{
         builder
        .UseMauiApp<App>()
-       .UseMauiCommunityToolkit() // 👈 deve vir aqui
-           .ConfigureFonts(fonts =>
+       .UseMauiCommunityToolkit().UseZoftAutoCompleteEntry()
+       .ConfigureFonts(fonts =>
            {
                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
-           });
+       });
 
 
         builder.Services.AddSingleton<HttpClient>(sp =>
@@ -34,6 +35,7 @@ public static class MauiProgramExtensions
         builder.Services.AddTransient<CustomerRegistrationPage>();
 
         builder.Services.AddSingleton<LiteDbService>();
+        builder.Services.AddSingleton<ProductRepositoryLiteDb>();
         builder.Services.AddSingleton<SyncService>();
 
         builder.Services.AddTransient<AuthHeaderHandler>();

@@ -7,15 +7,18 @@ using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Windows.Input;
 using System.Xml;
 using System.Xml.Serialization;
+using zoft.MauiExtensions.Controls;
 
 namespace Inovesys.Retail.Pages;
 
 public partial class ConsumerSalePage : ContentPage
 {
     private ObservableCollection<ConsumerSaleItem> _items = new();
-
+    ProductRepositoryLiteDb _products;
+    private readonly ObservableCollection<ProductSuggestion> ProductSuggestions = new();
 
     private LiteDbService _db;
 
@@ -32,14 +35,35 @@ public partial class ConsumerSalePage : ContentPage
 
     private ToastService _toastService;
 
-    public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor)
+    private CancellationTokenSource? _typeDebounceCts;
+    private const int DebounceMs = 300;
+
+    private bool _suppressTextChanged = false;
+
+    private bool _handlingUnfocus = false;
+
+    public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor, ProductRepositoryLiteDb products)
     {
         InitializeComponent();
+        
         ItemsListView.ItemsSource = _items;
         UpdateTotal();
         _db = liteDatabase;
         _toastService = toastService;
         _http = httpClientFactor.CreateClient("api");
+        _products = products;
+
+
+        // comando (genérico string!)
+        var searchCmd = new Command<string>(async term =>
+        {
+            System.Diagnostics.Debug.WriteLine($"🔎 Digitou: {term}");
+            await SearchProductsAsync(term);
+        });
+
+        // liga direto no controle Zoft
+        entryProductCode.TextChangedCommand = searchCmd;
+
     }
 
     protected override async void OnAppearing()
@@ -209,26 +233,7 @@ public partial class ConsumerSalePage : ContentPage
 
                 return (true, qrCode);
 
-
-                //invoice.NfeStatus = "AUTORIZADA";
-                //invoice.Protocol = result.ProtocolXml;
-                //invoice.Nfe = invoice.Nfe;
-                //// xmlString = string com o XML que você recebeu
-                //var serializer = new XmlSerializer(typeof(ProtNFe));
-                //using var reader = new StringReader(result.ProtocolXml);
-                //var resultx = (ProtNFe)serializer.Deserialize(reader);
-
-                //invoice.LastUpdate = DateTime.UtcNow;
-                //invoice.QrCode = qrCode;
-                //invoice.IssueDate = DateTime.Parse(xmlBuilder.dateHoraEmissao);
-                //invoice.AuthorizationDate = resultx.InfProt.DhRecbto;
-                //invoice.Protocol = resultx.InfProt.NProt.ToString();
-                //invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(signedXml));
-
-                //var invoiceCollection = _db.GetCollection<Invoice>("invoice");
-                //invoiceCollection.Update(invoice);
-
-                //return (true, qrCode);
+              
             }
             else
             {
@@ -625,7 +630,9 @@ public partial class ConsumerSalePage : ContentPage
                 try
                 {
 
-                    // monta request e envia
+                    inv.Items = _db.GetCollection<InvoiceItem>("invoiceitem")
+                        .Find(ii => ii.ClientId == inv.ClientId && ii.InvoiceId == inv.InvoiceId)
+                        .ToList();
                     var backReq = BuildBackofficeRequestFromInvoice(inv);
 
                     var ok = await SendInvoiceToBackofficeAsync(backReq);
@@ -837,13 +844,8 @@ public partial class ConsumerSalePage : ContentPage
         // Sanitiza para ASCII antes de imprimir
         text = ToAsciiEscPos(text);
 
-
         var bytes = Enc1252.GetBytes(text ?? "");
         s.Write(bytes, 0, bytes.Length);
-        //s.Write(new byte[] { 0x0A }, 0, 1);
-        // avança bem pouco (10 dots)
-        //s.Write(new byte[] { 0x1B, 0x33, 10, 0x0A }, 0, 4);
-        //s.Write(new byte[] { 0x1B, 0x33, 8, 0x0A }, 0, 4); // mais compacto
         s.Write(new byte[] { 0x1B, 0x33, 6, 0x0A }, 0, 4); // bem compacto
 
     }
@@ -1257,7 +1259,111 @@ public partial class ConsumerSalePage : ContentPage
         await _toastService.ShowToast($"Contingencia -> SEFAZ concluido. Sucesso: {ok}, Falhas: {fail}.");
     }
 
+    private const int SuggestLimit = 10;
+    private int _querySeq = 0; // evita race conditions entre buscas
+      
+    private async Task SearchProductsAsync(string term)
+    {
+        if (_suppressTextChanged) return;
 
+        // cancela a busca anterior E dispose
+        _typeDebounceCts?.Cancel();
+        _typeDebounceCts?.Dispose();
+        _typeDebounceCts = new CancellationTokenSource();
+        var token = _typeDebounceCts.Token;
+
+        term = (term ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(term))
+        {
+            ProductSuggestions.Clear();
+            return;
+        }
+
+        var mySeq = ++_querySeq;
+
+        try
+        {
+            await Task.Delay(DebounceMs, token);
+
+            var hasDigit = term.Any(char.IsDigit);
+            var hasLetter = term.Any(char.IsLetter);
+            bool preferCode = (hasDigit && !hasLetter && term.Length >= 3) || (hasDigit && hasLetter);
+
+            // opcional: também limitar por tempo total
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, timeoutCts.Token);
+
+            var results = await _products.FindAsync(
+                term: term,
+                limit: SuggestLimit,
+                preferCode: preferCode,
+                clientId: userConfig.ClientId,
+                ct: linked.Token);
+
+            if (mySeq != _querySeq) return; // resposta antiga → ignora
+
+            ProductSuggestions.Clear();
+            foreach (var p in results)
+                ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name });
+           entryProductCode.ItemsSource = ProductSuggestions;
+        }
+        catch (TaskCanceledException) { /* digitação contínua → esperado */ }
+        catch (OperationCanceledException) { /* idem */ }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Busca falhou: {ex}");
+            ProductSuggestions.Clear();
+        }
+    }
+
+
+    private void OnProductCodeUnfocused(object sender, FocusEventArgs e)
+    {
+        if (_handlingUnfocus) return;    // evita reentrância
+        _handlingUnfocus = true;
+
+        try
+        {
+            // cancela buscas pendentes e esconde sem mexer em foco
+            _typeDebounceCts?.Cancel();
+            ProductSuggestions.Clear();
+        }
+        finally
+        {
+            _handlingUnfocus = false;
+        }
+    }
+    private void OnItemTapped(object sender, TappedEventArgs e)
+    {
+        if (sender is Element el && el.BindingContext is ConsumerSaleItem item)
+        {
+            // opcional: marcar seleção visual
+            ItemsListView.SelectedItem = item;
+
+            // faça sua ação de “clique” aqui:
+            // ex: abrir edição de quantidade, remover, etc.
+            // await EditarItemAsync(item);
+        }
+    }
+
+    private void OnItemSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var item = e.CurrentSelection?.FirstOrDefault() as ConsumerSaleItem;
+        // habilite/desabilite botões, etc.
+    }
+
+    private void OnSuggestionChosen(object sender, EventArgs e)
+    {
+        if (sender is AutoCompleteEntry ac && ac.SelectedSuggestion is ProductSuggestion chosen)
+        {
+            _suppressTextChanged = true;
+            entryProductCode.Text = chosen.Id;
+            _suppressTextChanged = false;
+
+            OnProductCodeEntered(entryProductCode, EventArgs.Empty);
+            entryQuantity?.Focus();
+        }
+    }
 
 }
 

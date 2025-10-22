@@ -2,17 +2,42 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:models="clr-namespace:Inovesys.Retail.Models"
              x:Class="Inovesys.Retail.Pages.ConsumerSalePage"
-              Title="">
+             xmlns:zoft="http://zoft.MauiExtensions/Controls"
+             Title=""
+             x:Name="this">
 
     <ContentPage.MenuBarItems>
         <MenuBarItem Text="Venda Consumidor">
-            <MenuFlyoutItem x:Name="miFinalizar"
-                        Text="Finalizar venda (F5)"
-                        Clicked="OnFinalizeSaleClicked">
+
+
+            <MenuFlyoutItem x:Name="miCancelarItem"
+            Text="Cancelar produto (F2)"
+            Clicked="OnCancelItemClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
-                    <KeyboardAccelerator Key="F5" />
+                    <KeyboardAccelerator Key="F2" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
+
+            <MenuFlyoutItem x:Name="miFinalizar"
+                        Text="Finalizar venda (F6)"
+                        Clicked="OnFinalizeSaleClicked">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F6" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+
+            <MenuFlyoutItem x:Name="miCancelar"
+              Text="Cancela venda (F8)"
+              Clicked="OnCancelSaleClicked">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F8" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+
+
+          
+
+
         </MenuBarItem>
     </ContentPage.MenuBarItems>
 
@@ -87,20 +112,30 @@
         <Grid Grid.Row="2"
               ColumnSpacing="12"
               ColumnDefinitions="*,120">
-            <Entry x:Name="entryProductCode"
-                   Grid.Column="0"
-                   Placeholder="Código do produto"
-                   ReturnType="Next"
-                   Completed="OnProductCodeEntered"
-                   HorizontalOptions="Fill" />
+
+
+            <zoft:AutoCompleteEntry
+                    x:Name="entryProductCode"
+                    Placeholder="Código do produto ou descrição"
+                    Text="{Binding ProductText, Mode=TwoWay}"
+                    ItemsSource="{Binding ProductSuggestions}"
+                    DisplayMemberPath="Name"
+                    TextMemberPath="Id"
+                    SuggestionChosen="OnSuggestionChosen"
+                    Completed="OnProductCodeEntered"
+                    Unfocused="OnProductCodeUnfocused" />       
+
+
 
             <Entry x:Name="entryQuantity"
-                   Grid.Column="1"
-                   Text="1"
-                   Keyboard="Numeric"
-                   HorizontalTextAlignment="Center"
-                   Completed="OnProductCodeEntered"
-                   Focused="OnQuantityFocused" />
+                    Grid.Column="1"
+                    Text="1"
+                    Keyboard="Numeric"
+                    HorizontalTextAlignment="Center"
+                    Completed="OnProductCodeEntered"
+                    Focused="OnQuantityFocused" />
+
+
         </Grid>
 
         <!-- 3) LISTA DE ITENS -->
@@ -159,11 +194,11 @@
                     AlignContent="Stretch"
                     Margin="0,8,0,0">
             <Button Style="{StaticResource FlexButton}"
-                    Text="Cancelar Item"
+                    Text="Cancelar Item (F2)"
                     Clicked="OnCancelItemClicked" />
-            <Button Style="{StaticResource FlexButton}"
+            <!--<Button Style="{StaticResource FlexButton}"
                     Text="Desconto"
-                    Clicked="OnDiscountClicked" />
+                    Clicked="OnDiscountClicked" />-->
         </FlexLayout>
 
         <!-- ====== (5) BOTÕES DE VENDA ====== -->
@@ -175,12 +210,12 @@
                     AlignContent="Stretch"
                     Margin="0,4,0,0">
             <Button Style="{StaticResource FlexButton}"
-                    Text="Cancelar Venda"
+                    Text="Cancelar Venda (F8)"
                     BackgroundColor="Red"
                     TextColor="White"
                     Clicked="OnCancelSaleClicked" />
             <Button Style="{StaticResource FlexButton}"
-                    Text="Finalizar venda (F5)"
+                    Text="Finalizar venda (F6)"
                     BackgroundColor="Green"
                     TextColor="White"
                     Clicked="OnFinalizeSaleClicked" />
