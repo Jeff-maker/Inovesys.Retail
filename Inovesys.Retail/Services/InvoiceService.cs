@@ -30,6 +30,7 @@ namespace Inovesys.Retail.Services
             _branche = branche;
             _invoicePostDto = invoicePostDto;
         }
+        
         public async Task<(bool Sucess, Invoice Invoice)> CreateAsync()
         {
             try
@@ -414,6 +415,61 @@ namespace Inovesys.Retail.Services
             }
 
             return (true, null, taxes);
+        }
+
+        public (bool Success, string Error, int Invoices, int Items, int Taxes) DeleteInvoiceCascade(
+                        int invoiceId,
+                        bool allowAuthorizedDeletion = false)
+        {
+            try
+            {
+                _db.Database.BeginTrans();
+
+                // 1) Localiza a nota (garantindo o escopo do cliente/empresa/filial atuais)
+                var inv = _invoices.FindOne(i =>
+                    i.InvoiceId == invoiceId &&
+                    i.ClientId == _branche.ClientId &&
+                    i.CompanyId == _branche.CompanyId &&
+                    i.BrancheId == _branche.Id);
+
+                if (inv == null)
+                {
+                    _db.Database.Rollback();
+                    return (false, $"Invoice {invoiceId} não encontrada.", 0, 0, 0);
+                }
+
+                // 2) Segurança: evita apagar nota AUTORIZADA (100/150) por engano
+                if (!allowAuthorizedDeletion && string.Equals(inv.NfeStatus, "AUTORIZADA", StringComparison.OrdinalIgnoreCase))
+                {
+                    _db.Database.Rollback();
+                    return (false, $"Invoice {invoiceId} já AUTORIZADA. Use allowAuthorizedDeletion=true se quiser prosseguir.", 0, 0, 0);
+                }
+
+                // 3) Apaga impostos primeiro (dependem dos itens)
+                int taxes = _invoiceTaxes.DeleteMany(t =>
+                    t.InvoiceId == invoiceId &&
+                    t.ClientId == _branche.ClientId);
+
+                // 4) Apaga itens
+                int items = _invoiceItem.DeleteMany(it =>
+                    it.InvoiceId == invoiceId &&
+                    it.ClientId == _branche.ClientId);
+
+                // 5) Apaga a invoice
+                int invoices = _invoices.DeleteMany(i =>
+                    i.InvoiceId == invoiceId &&
+                    i.ClientId == _branche.ClientId &&
+                    i.CompanyId == _branche.CompanyId &&
+                    i.BrancheId == _branche.Id);
+
+                _db.Database.Commit();
+                return (true, null, invoices, items, taxes);
+            }
+            catch (Exception ex)
+            {
+                _db.Database.Rollback();
+                return (false, $"Erro ao deletar invoice {invoiceId}: {ex.Message}", 0, 0, 0);
+            }
         }
 
     }

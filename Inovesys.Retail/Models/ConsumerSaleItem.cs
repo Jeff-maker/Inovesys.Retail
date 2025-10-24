@@ -1,13 +1,43 @@
-﻿namespace Inovesys.Retail.Models
+﻿using System.ComponentModel;
+
+namespace Inovesys.Retail.Models
 {
-    public class ConsumerSaleItem
+    public class ConsumerSaleItem : INotifyPropertyChanged
     {
         public int Id { get; set; }
         public string MaterialId { get; set; }
         public string Description { get; set; }
         public decimal Price { get; set; }
-        public int Quantity { get; set; } = 1;
+
+        private int _quantity = 1;
+        public int Quantity
+        {
+            get => _quantity;
+            set
+            {
+                if (_quantity != value)
+                {
+                    _quantity = value;
+                    OnPropertyChanged(nameof(Quantity));
+                    OnPropertyChanged(nameof(Total));
+                }
+            }
+        }
+
         public string NCM { get; set; }
+
+        
+
+        public decimal Total => Price * Quantity;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+
     }
 
 }

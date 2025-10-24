@@ -1,8 +1,10 @@
-﻿using Inovesys.Retail.Entities;
+﻿using CommunityToolkit.Mvvm.Input;
+using Inovesys.Retail.Entities;
 using Inovesys.Retail.Models;
 using Inovesys.Retail.Services;
 using LiteDB;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -45,14 +47,37 @@ public partial class ConsumerSalePage : ContentPage
     public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor, ProductRepositoryLiteDb products)
     {
         InitializeComponent();
-        
+
         ItemsListView.ItemsSource = _items;
         UpdateTotal();
         _db = liteDatabase;
         _toastService = toastService;
         _http = httpClientFactor.CreateClient("api");
         _products = products;
+        BindingContext = this;
 
+        
+
+        // escuta alterações na coleção(add / remove / reset) E em cada item
+        _items.CollectionChanged += (_, e) =>
+        {
+            if (e.NewItems != null)
+                foreach (ConsumerSaleItem it in e.NewItems)
+                    it.PropertyChanged += ItemOnPropertyChanged;
+
+            if (e.OldItems != null)
+                foreach (ConsumerSaleItem it in e.OldItems)
+                    it.PropertyChanged -= ItemOnPropertyChanged;
+
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+            {
+                // reanexa (ex.: Clear)
+                foreach (var it in _items)
+                    it.PropertyChanged += ItemOnPropertyChanged;
+            }
+
+            
+        };
 
         // comando (genérico string!)
         var searchCmd = new Command<string>(async term =>
@@ -64,6 +89,11 @@ public partial class ConsumerSalePage : ContentPage
         // liga direto no controle Zoft
         entryProductCode.TextChangedCommand = searchCmd;
 
+    }
+
+    private void ItemOnPropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        UpdateTotal();
     }
 
     protected override async void OnAppearing()
@@ -147,7 +177,7 @@ public partial class ConsumerSalePage : ContentPage
 
         await CheckAndSendContingencyAsync();   // <— novo
         await CheckAndSendAuthorizedInvoicesAsync();
-        
+
         await Task.Delay(100);
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -156,7 +186,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
 
-    private async Task<(bool Success, string QrCode)> EnviarNotaParaSefaz(Invoice invoice)
+    private async Task<(bool Success, string QrCode, bool TransportOk,string StatusCode)> EnviarNotaParaSefaz(Invoice invoice)
     {
         try
         {
@@ -190,7 +220,7 @@ public partial class ConsumerSalePage : ContentPage
                 // Opcional: detalhar exceção interna
                 if (xmlBuilder.Error.InnerException != null)
                     await _toastService.ShowToast(xmlBuilder.Error.InnerException.Message);
-                return (false, null);
+                return (false, null,true,"9999");
             }
 
             var signedXml = xmlBuilder.Xml.InnerXml;
@@ -198,12 +228,10 @@ public partial class ConsumerSalePage : ContentPage
 
             var sefazService = new SefazService(_db, _company); // instanciado com seus parâmetros
 
-            var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice);
+            var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice , _client.EnvironmentSefaz );
 
             if (result.Success)
             {
-
-
                 invoice.NfeStatus = "AUTORIZADA";
                 invoice.Protocol = result.ProtocolXml;
 
@@ -231,20 +259,19 @@ public partial class ConsumerSalePage : ContentPage
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
 
-                return (true, qrCode);
+                return (true, qrCode, result.TransportOk , result.StatusCode);
 
-              
             }
             else
             {
-                await _toastService.ShowToast(result.Message);
-                return (false, null);
+                await _toastService.ShowToast(result.StatusMessage);
+                return (false, null, result.TransportOk, result.StatusCode);
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Erro ao carregar a nota: {ex.Message}");
-            return (false, null);
+            return (false, null, true, "999");
         }
     }
 
@@ -314,7 +341,7 @@ public partial class ConsumerSalePage : ContentPage
             Id = nextItemNumber,
             MaterialId = product.Id,
             Description = product.Name,
-            Price = price.Price * quantity,
+            Price = price.Price,
             Quantity = quantity,
             NCM = product.NcmId
         });
@@ -373,7 +400,8 @@ public partial class ConsumerSalePage : ContentPage
                 MaterialId = (item.MaterialId),
                 MaterialName = (item.Description),
                 Quantity = item.Quantity,
-                UnitPrice = item.Price / item.Quantity,
+                UnitPrice = item.Price,
+                TotalAmount = item.Total,
                 DiscountAmount = 0,
                 UnitId = "UN",
                 NCM = item.NCM,
@@ -396,12 +424,6 @@ public partial class ConsumerSalePage : ContentPage
             post.Invoice.Customer.Document = cpfDigits;            // usado pelo NFeXmlBuilder para <dest><CPF>
             if (string.IsNullOrWhiteSpace(post.Invoice.Customer.Name))
                 post.Invoice.Customer.Name = "CONSUMIDOR";
-
-            // Se existir indicador de IE do destinatário no seu modelo, garanta '9' (não contribuinte):
-            // post.Invoice.Customer.IndicadorIEDest = "9"; // ajuste o nome do campo conforme seu modelo
-            // Se houver tipo de pessoa:
-            // post.Invoice.Customer.Type = "F";            // Pessoa Física (se existir no seu modelo)
-
             // persiste no LiteDB antes da montagem/assinatura, por segurança
             var invCol = _db.GetCollection<Invoice>("invoice");
             invCol.Update(post.Invoice);
@@ -415,16 +437,26 @@ public partial class ConsumerSalePage : ContentPage
         var send = await EnviarNotaParaSefaz(invoice: post.Invoice);
         if (!send.Success)
         {
-            await _toastService.ShowToast("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
-            await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
+            
+            if( !send.TransportOk )
+            {
+                await _toastService.ShowToast("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
+                await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
+                _items.Clear();
+                entryQuantity.Text = "1";
+                entryCustomerCpf.Text = string.Empty;
+                MainThread.BeginInvokeOnMainThread(() => entryCustomerCpf.Focus());
+                UpdateTotal();
 
-            _items.Clear();
-            entryQuantity.Text = "1";
-            entryCustomerCpf.Text = string.Empty;
-            MainThread.BeginInvokeOnMainThread(() => entryCustomerCpf.Focus());
-            UpdateTotal();
+                await _toastService.ShowToast("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
 
-            await _toastService.ShowToast("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
+            }
+            else
+            {
+                NCFE.DeleteInvoiceCascade(post.Invoice.InvoiceId, allowAuthorizedDeletion: true);
+                await _toastService.ShowToast("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode );
+            }
+            
             return; // <<< IMPORTANTE: não envia para retaguarda
 
         }
@@ -734,10 +766,10 @@ public partial class ConsumerSalePage : ContentPage
                 var tot = unit * q;
                 EscPos_Align(ms, 2);
                 Writeln(ms, $"{q:0.##} {un} x R$ {unit:N2} = R$ {tot:N2}", COLS);
-                
+
                 seq++;
             }
-            
+
             EscPos_Reset(ms);
 
             Line(ms, COLS);
@@ -1234,7 +1266,7 @@ public partial class ConsumerSalePage : ContentPage
                 var xmlAssinado = Encoding.UTF8.GetString(Convert.FromBase64String(inv.AuthorizedXml));
                 var sefazService = new SefazService(_db, _company);
 
-                var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv);
+                var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv, _client.EnvironmentSefaz);
                 if (result.Success)
                 {
                     // Atualiza dados de autorização
@@ -1261,7 +1293,7 @@ public partial class ConsumerSalePage : ContentPage
 
     private const int SuggestLimit = 10;
     private int _querySeq = 0; // evita race conditions entre buscas
-      
+
     private async Task SearchProductsAsync(string term)
     {
         if (_suppressTextChanged) return;
@@ -1305,7 +1337,7 @@ public partial class ConsumerSalePage : ContentPage
             ProductSuggestions.Clear();
             foreach (var p in results)
                 ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name });
-           entryProductCode.ItemsSource = ProductSuggestions;
+            entryProductCode.ItemsSource = ProductSuggestions;
         }
         catch (TaskCanceledException) { /* digitação contínua → esperado */ }
         catch (OperationCanceledException) { /* idem */ }
@@ -1364,6 +1396,29 @@ public partial class ConsumerSalePage : ContentPage
             entryQuantity?.Focus();
         }
     }
+
+
+    [RelayCommand] // ou manualmente se não usar CommunityToolkit
+    public async Task OnEditQuantityCommand(ConsumerSaleItem item)
+    {
+        if (item == null)
+            return;
+
+        string result = await DisplayPromptAsync(
+            "Alterar quantidade",
+            $"Produto: {item.Description}\nQuantidade atual: {item.Quantity}",
+            "OK", "Cancelar",
+            "Nova quantidade",
+            maxLength: 6,
+            keyboard: Keyboard.Numeric);
+
+        if (int.TryParse(result, out int novaQtd) && novaQtd > 0)
+        {
+            item.Quantity = novaQtd;
+            // Atualiza a CollectionView (se estiver usando ObservableCollection, ela se atualiza sozinha)
+        }
+    }
+
 
 }
 

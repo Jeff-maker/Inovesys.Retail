@@ -16,17 +16,24 @@ public class SefazService
         _company = company;
     }
 
-    public async Task<(bool Success, string Message, string ProtocolXml, string ProcXml, Invoice UpdatedInvoice)>
-    SendToSefazAsync(int id, string signedXml, Invoice invoice)
+    public async Task<(
+     bool Success,            // autorizado (cStat 100/150)
+     bool TransportOk,        // comunicação OK com SEFAZ
+     string StatusCode,       // cStat (ex.: "100","204","539", etc.)
+     string StatusMessage,    // xMotivo
+     string ProtocolXml,
+     string ProcXml,
+     Invoice UpdatedInvoice)>
+            SendToSefazAsync(int id, string signedXml, Invoice invoice, string EnvironmentSefaz)
     {
         try
         {
             var cert = SefazHelpers.LoadCertificate(_company.CertificateId, _company.ClientId, _db);
             if (cert == null)
-                return (false, "Certificado digital não encontrado ou inválido", null, null, null);
+                return (false, false, "CERT", "Certificado digital não encontrado ou inválido", null, null, null);
 
             if (string.IsNullOrWhiteSpace(signedXml))
-                return (false, "XML assinado não fornecido", null, null, null);
+                return (false, false, "XML0", "XML assinado não fornecido", null, null, null);
 
             var nfeXml = new XmlDocument { PreserveWhitespace = true };
             try
@@ -35,7 +42,7 @@ public class SefazService
             }
             catch (XmlException ex)
             {
-                return (false, $"XML inválido: {ex.Message}", null, null, null);
+                return (false, false, "XML1", $"XML inválido: {ex.Message}", null, null, null);
             }
 
             // HTTP + certificado
@@ -46,9 +53,22 @@ public class SefazService
             };
             handler.ClientCertificates.Add(cert);
 
+
+            string sefazBaseUrl;
+
+            // Ambiente: 1 = Produção, 2 = Homologação (padrão das NF-e / NFC-e)
+            if (EnvironmentSefaz == "1")
+            {
+                sefazBaseUrl = "https://www.nfce.fazenda.sp.gov.br"; // produção
+            }
+            else
+            {
+                sefazBaseUrl = "https://homologacao.nfce.fazenda.sp.gov.br"; // homologação
+            }
+
             using var client = new HttpClient(handler)
             {
-                BaseAddress = new Uri("https://homologacao.nfce.fazenda.sp.gov.br"),
+                BaseAddress = new Uri(sefazBaseUrl),
                 Timeout = TimeSpan.FromSeconds(60)
             };
 
@@ -61,9 +81,9 @@ public class SefazService
             var responseContent = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                return (false, $"Erro ao enviar para SEFAZ: {responseContent}", null, null, null);
+                return (false, false, ((int)response.StatusCode).ToString(), $"Erro HTTP ao enviar para SEFAZ: {responseContent}", null, null, null);
 
-            // Carrega resposta
+            // A partir daqui: transporte OK (200 + corpo)
             var retorno = new XmlDocument { PreserveWhitespace = true };
             retorno.LoadXml(responseContent);
 
@@ -72,72 +92,64 @@ public class SefazService
             ns.AddNamespace("nfe", "http://www.portalfiscal.inf.br/nfe");
             ns.AddNamespace("nfe4", "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4");
 
-            // retEnviNFe (síncrono p/ NFC-e costuma trazer protNFe quando cStat = 104)
             var retEnviNFe = retorno.SelectSingleNode("//soap:Body/nfe4:nfeResultMsg/nfe:retEnviNFe", ns)
-                             ?? retorno.SelectSingleNode("//retEnviNFe"); // fallback sem namespace
-
+                              ?? retorno.SelectSingleNode("//retEnviNFe");
             if (retEnviNFe == null)
-                return (false, "Resposta da SEFAZ não contém retEnviNFe.", null, null, null);
+                return (false, true, "RET0", "Resposta da SEFAZ não contém retEnviNFe.", null, null, null);
 
             var cStatLote = retEnviNFe.SelectSingleNode("nfe:cStat", ns)?.InnerText
-                         ?? retEnviNFe.SelectSingleNode("cStat")?.InnerText;
+                          ?? retEnviNFe.SelectSingleNode("cStat")?.InnerText
+                          ?? "RET1";
 
             var xMotivoLote = retEnviNFe.SelectSingleNode("nfe:xMotivo", ns)?.InnerText
-                           ?? retEnviNFe.SelectSingleNode("xMotivo")?.InnerText;
+                            ?? retEnviNFe.SelectSingleNode("xMotivo")?.InnerText
+                            ?? "Sem xMotivo";
 
             if (cStatLote != "104") // 104 = Lote processado
-                return (false, $"Lote não processado (cStat={cStatLote}): {xMotivoLote}", null, null, null);
+                return (false, true, cStatLote, $"Lote não processado: {xMotivoLote}", null, null, null);
 
-            // pega o protNFe
             var protNFeNode = retEnviNFe.SelectSingleNode("nfe:protNFe", ns)
-                          ?? retEnviNFe.SelectSingleNode("protNFe");
-
+                           ?? retEnviNFe.SelectSingleNode("protNFe");
             if (protNFeNode == null)
-                return (false, "Lote processado, mas sem protNFe na resposta.", null, null, null);
+                return (false, true, "RET2", "Lote processado, mas sem protNFe.", null, null, null);
 
             var infProtNode = protNFeNode.SelectSingleNode("nfe:infProt", ns)
-                            ?? protNFeNode.SelectSingleNode("infProt");
+                             ?? protNFeNode.SelectSingleNode("infProt");
             if (infProtNode == null)
-                return (false, "protNFe encontrado, mas sem infProt.", null, null, null);
+                return (false, true, "RET3", "protNFe encontrado, mas sem infProt.", null, null, null);
 
             var cStatNFe = infProtNode.SelectSingleNode("nfe:cStat", ns)?.InnerText
-                        ?? infProtNode.SelectSingleNode("cStat")?.InnerText;
+                         ?? infProtNode.SelectSingleNode("cStat")?.InnerText
+                         ?? "RET4";
 
             var xMotivoNFe = infProtNode.SelectSingleNode("nfe:xMotivo", ns)?.InnerText
-                           ?? infProtNode.SelectSingleNode("xMotivo")?.InnerText;
+                           ?? infProtNode.SelectSingleNode("xMotivo")?.InnerText
+                           ?? "Sem xMotivo";
 
-            // Sucessos típicos
+            // Sucesso de negócio (autorizada)
             var autorizado = (cStatNFe == "100" || cStatNFe == "150");
 
-            // Observação: 204 (Duplicidade) normalmente requer CONSULTAR protocolo para obter o nProt
+            // Duplicidade (comunicação OK, erro de negócio)
             if (!autorizado && cStatNFe == "204")
-            {
-                // Aqui você pode opcionalmente disparar uma consulta protocolo (não implementada nesta amostra).
-                // Por ora, retorna como erro orientando a consulta.
-                return (false, "Duplicidade de NF-e (204). Consulte protocolo para obter nProt.", null, null, null);
-            }
+                return (false, true, cStatNFe, "Duplicidade de NF-e (204). Consulte protocolo para obter nProt.", null, null, null);
 
             if (!autorizado)
-                return (false, $"SEFAZ retornou cStat={cStatNFe}: {xMotivoNFe}", null, null, null);
+                return (false, true, cStatNFe, xMotivoNFe, null, null, null);
 
-            // Até aqui: autorizado (100/150). Vamos montar o nfeProc.
-            // 1) protNFe completo:
+            // Autorizada: montar nfeProc
             var protXml = protNFeNode.OuterXml;
-
-            // 2) monta nfeProc (NFe + protNFe)
             var procXml = BuildProcNFe(nfeXml, protNFeNode);
 
-            // Atualiza sua entidade
             invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(procXml));
-            invoice.Protocol = protXml; // só o protNFe
+            invoice.Protocol = protXml;
             invoice.NfeStatus = "AUTORIZADA";
             invoice.LastUpdate = DateTime.UtcNow;
 
-            return (true, $"Nota autorizada: {xMotivoNFe}", protXml, procXml, invoice);
+            return (true, true, cStatNFe, xMotivoNFe, protXml, procXml, invoice);
         }
         catch (Exception ex)
         {
-            return (false, $"Erro ao enviar nota para SEFAZ: {ex.Message}", null, null, null);
+            return (false, false, "EXC", $"Erro ao enviar nota para SEFAZ: {ex.Message}", null, null, null);
         }
     }
 
