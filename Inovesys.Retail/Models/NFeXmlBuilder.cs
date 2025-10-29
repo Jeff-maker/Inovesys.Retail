@@ -594,7 +594,9 @@ namespace Inovesys.Retail.Models
             infNFe.AppendChild(pag);
         }
 
-        public string GenerateQRCodeV2(string? chaveAcesso, string cpfCnpjConsumidor, decimal valorTotal, decimal valorTotalICMS, string dataHoraEmissao, string? csc, string? cIdToken, int tipoEmissao, bool homologacao = false, string? digestValueBase64 = null)
+        public string GenerateQRCodeV2(string? chaveAcesso, string cpfCnpjConsumidor, decimal valorTotal, decimal valorTotalICMS, string dataHoraEmissao, string
+            
+            ? csc, string? cIdToken, int tipoEmissao, bool homologacao = false, string? digestValueBase64 = null)
         {
             if (csc == null)
                 throw new InvalidOperationException("Dados de CSC/Token inválidos");

@@ -109,7 +109,8 @@
                     Placeholder="Código do produto ou descrição"
                     Text="{Binding ProductText, Mode=TwoWay}"
                     ItemsSource="{Binding ProductSuggestions}"
-                    DisplayMemberPath="Name"
+                    DisplayMemberPath="Display"
+                                
                     TextMemberPath="Id"
                     SuggestionChosen="OnSuggestionChosen"
                     Completed="OnProductCodeEntered"
@@ -128,7 +129,6 @@
 
         <!-- 3) LISTA DE ITENS -->
 
-
         <Grid Grid.Column="0"
               Grid.Row="3"
               Grid.ColumnSpan="3"
@@ -136,7 +136,6 @@
               HorizontalOptions="Fill"
               VerticalOptions="Fill"
               RowDefinitions="*">
-            <!-- 👈 uma linha só -->
 
             <CollectionView
                     x:Name="ItemsListView"
@@ -151,7 +150,7 @@
                         <Border  StrokeThickness="2" Stroke="#90A4AE" StrokeShape="RoundRectangle 10" HeightRequest="70"
                                  BackgroundColor="#007bff" 
                                  Padding="4" Margin="2">
-                         
+
                             <Grid Padding="8" ColumnSpacing="8" ColumnDefinitions="3*,*,*,*"  RowSpacing="10" VerticalOptions="Center">
                                 <Label TextColor="White" Grid.Column="0" Text="{Binding Description}" FontSize="16" VerticalOptions="Center"/>
                                 <!--<Label TextColor="White" Grid.Column="1" Text="{Binding Quantity, StringFormat='{0:N0}'}" FontSize="16" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
@@ -171,7 +170,7 @@
                                                 BackgroundColor="#1E88E5"
                                                 WidthRequest="40"
                                                 HorizontalOptions="Center" />
-                                
+
                                 <Label TextColor="White" Grid.Column="3" Text="{Binding Total, StringFormat='R$ {0:F2}'}" FontSize="16" HorizontalTextAlignment="End" VerticalOptions="Center"/>
                             </Grid>
                         </Border>
@@ -193,53 +192,14 @@
              Margin="0,0,0,6" />
 
 
-        <!-- ====== (4) BOTÕES DE AÇÕES ====== -->
-        <!--
-        <FlexLayout Grid.Row="4"
-                    Direction="Row"
-                    Wrap="Wrap"
-                    JustifyContent="SpaceBetween"
-                    AlignItems="Stretch"
-                    AlignContent="Stretch"
-                    Margin="0,8,0,0">
-            <Button Style="{StaticResource FlexButton}"
-                    Text="Cancelar Item (F2)"
-                    Clicked="OnCancelItemClicked" />
-            -->
-        <!--<Button Style="{StaticResource FlexButton}"
-                    Text="Desconto"
-                    Clicked="OnDiscountClicked" />-->
-        <!--
-        </FlexLayout>
-
-        -->
-        <!-- ====== (5) BOTÕES DE VENDA ====== -->
-
         <Grid Grid.Row="5" 
               Grid.ColumnSpan="3"
               Margin="0,4,0,0"
               ColumnDefinitions="*,*,*">
 
-            <Button Grid.Column="0" 
-                    Style="{StaticResource FlexButton}"
-                    Text="Cancelar Venda (F8)"
-                    BackgroundColor="Red"
-                    TextColor="White"
-                    Clicked="OnCancelSaleClicked" />
-
-            <Button Grid.Column="1" 
-                    Style="{StaticResource FlexButton}"
-                    Text="Cancelar Item (F2)"
-                    BackgroundColor="Yellow"
-                    TextColor="Black"
-                    Clicked="OnCancelItemClicked" />
-
-            <Button Grid.Column="2" 
-                    Style="{StaticResource FlexButton}"
-                    Text="Finalizar venda (F6)"
-                    BackgroundColor="Green"
-                    TextColor="White"
-                    Clicked="OnFinalizeSaleClicked" />
+            <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Cancelar Venda (F8)" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked" />
+            <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Cancelar Item (F2)" BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked" />
+            <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar venda (F6)" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked" />
         </Grid>
 
     </Grid>

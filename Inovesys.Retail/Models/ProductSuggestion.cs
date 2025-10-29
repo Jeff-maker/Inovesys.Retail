@@ -15,5 +15,9 @@ namespace Inovesys.Retail.Models
         public string Name { get; set; } = string.Empty;
 
         public override string ToString() => $"{Id} - {Name}";
+
+
+        /// Usado pelo Zoft via DisplayMemberPath
+        public string Display => $"{Id} - {Name}";
     }
 }

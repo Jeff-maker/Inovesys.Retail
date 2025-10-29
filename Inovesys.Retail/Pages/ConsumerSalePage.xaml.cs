@@ -5,14 +5,17 @@ using Inovesys.Retail.Services;
 using LiteDB;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Windows.Input;
 using System.Xml;
 using System.Xml.Serialization;
-using zoft.MauiExtensions.Controls;
+using ZXing.Net.Maui;
+using ZXing.Common;
+using ZXing;
 
 namespace Inovesys.Retail.Pages;
 
@@ -54,9 +57,6 @@ public partial class ConsumerSalePage : ContentPage
         _toastService = toastService;
         _http = httpClientFactor.CreateClient("api");
         _products = products;
-        BindingContext = this;
-
-        
 
         // escuta alterações na coleção(add / remove / reset) E em cada item
         _items.CollectionChanged += (_, e) =>
@@ -76,7 +76,7 @@ public partial class ConsumerSalePage : ContentPage
                     it.PropertyChanged += ItemOnPropertyChanged;
             }
 
-            
+
         };
 
         // comando (genérico string!)
@@ -186,7 +186,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
 
-    private async Task<(bool Success, string QrCode, bool TransportOk,string StatusCode)> EnviarNotaParaSefaz(Invoice invoice)
+    private async Task<(bool Success, string QrCode, bool TransportOk, string StatusCode)> EnviarNotaParaSefaz(Invoice invoice)
     {
         try
         {
@@ -220,7 +220,7 @@ public partial class ConsumerSalePage : ContentPage
                 // Opcional: detalhar exceção interna
                 if (xmlBuilder.Error.InnerException != null)
                     await _toastService.ShowToast(xmlBuilder.Error.InnerException.Message);
-                return (false, null,true,"9999");
+                return (false, null, true, "9999");
             }
 
             var signedXml = xmlBuilder.Xml.InnerXml;
@@ -228,7 +228,7 @@ public partial class ConsumerSalePage : ContentPage
 
             var sefazService = new SefazService(_db, _company); // instanciado com seus parâmetros
 
-            var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice , _client.EnvironmentSefaz );
+            var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice, _client.EnvironmentSefaz);
 
             if (result.Success)
             {
@@ -259,7 +259,7 @@ public partial class ConsumerSalePage : ContentPage
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
 
-                return (true, qrCode, result.TransportOk , result.StatusCode);
+                return (true, qrCode, result.TransportOk, result.StatusCode);
 
             }
             else
@@ -281,8 +281,20 @@ public partial class ConsumerSalePage : ContentPage
         lblTotal.Text = $"Total: R$ {total.ToString("N2", new CultureInfo("pt-BR"))}";
     }
 
+
     private async void OnProductCodeEntered(object sender, EventArgs e)
     {
+
+        // Ignora se acabou de navegar (ajuste o tempo conforme necessário)
+        if (_navigating && DateTime.UtcNow - _lastNavigate < TimeSpan.FromMilliseconds(300))
+        {
+            _navigating = false;
+            return;
+        }
+
+        _navigating = false;
+
+
         var code = entryProductCode.Text?.Trim();
         if (string.IsNullOrEmpty(code))
         {
@@ -437,8 +449,8 @@ public partial class ConsumerSalePage : ContentPage
         var send = await EnviarNotaParaSefaz(invoice: post.Invoice);
         if (!send.Success)
         {
-            
-            if( !send.TransportOk )
+
+            if (!send.TransportOk)
             {
                 await _toastService.ShowToast("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
                 await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
@@ -454,9 +466,9 @@ public partial class ConsumerSalePage : ContentPage
             else
             {
                 NCFE.DeleteInvoiceCascade(post.Invoice.InvoiceId, allowAuthorizedDeletion: true);
-                await _toastService.ShowToast("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode );
+                await _toastService.ShowToast("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode);
             }
-            
+
             return; // <<< IMPORTANTE: não envia para retaguarda
 
         }
@@ -698,6 +710,9 @@ public partial class ConsumerSalePage : ContentPage
 
     #region Impressão NFC-e via ESC/POS
 
+    const int DIREITA = 2;
+    const int CENTRO = 1;
+    const int ESQUERDA = 0;
     // Helper: escrever linha ESC/POS
     static void EscPos_SetLineSpacing(Stream s, byte dots) => s.Write(new byte[] { 0x1B, 0x33, dots }, 0, 3);  // ESC 3 n
     static void EscPos_Reset(Stream s) => s.Write(new byte[] { 0x1B, 0x40 });                         // ESC @
@@ -720,45 +735,72 @@ public partial class ConsumerSalePage : ContentPage
         SetEncoding(CodePagesEncodingProvider.Instance.GetEncoding(dotnetCodePage));
     }
 
+    enum Align { Left, Right, Center }
+
+    static void WriteColumnsSameLine(Stream s, int cols, params (string text, int width, Align align)[] cells)
+    {
+        // garante que a soma das larguras não ultrapasse COLS
+        int total = 0;
+        foreach (var c in cells) total += c.width;
+        if (total > cols) throw new ArgumentException("Soma das larguras > COLS");
+
+        var sb = new System.Text.StringBuilder(cols);
+        foreach (var (text, width, align) in cells)
+            sb.Append(FitCell(text, width, align));
+
+        Write(s, sb.ToString(), cols); // sem LF
+    }
+
+    static string FitCell(string text, int width, Align align)
+    {
+        text ??= "";
+        text = ToAsciiEscPos(text);
+        if (text.Length > width) return text.Substring(0, width);
+
+        return align switch
+        {
+            Align.Right => text.PadLeft(width),
+            Align.Center => (text.Length >= width) ? text
+                            : new string(' ', (width - text.Length) / 2)
+                              + text
+                              + new string(' ', width - text.Length - (width - text.Length) / 2),
+            _ => text.PadRight(width),
+        };
+    }
+
     public async Task ImprimirCupomViaEscPosAsync(Invoice invoice, string qrCodeUrl)
     {
         try
         {
-            const int COLS = 42;
+            const int COLS = 48;
             using var ms = new MemoryStream();
             EscPos_Reset(ms);
             EscPos_SetCodePage(ms, 0x00, 437);
 
-            // ----- Cabeçalho (alinhado à esquerda, com algumas linhas em negrito/centrado) -----
+            // ----- Cabeçalho -----
             EscPos_Bold(ms, true);
-            EscPos_Align(ms, 1);
+            EscPos_Align(ms, CENTRO);
             Writeln(ms, "Documento Auxiliar da NFC-e", COLS);
             EscPos_Bold(ms, false);
-            EscPos_Align(ms, 0);
-
-            EscPos_Align(ms, 1);
-            Writeln(ms, $"CNPJ: {_branche?.Cnpj} ");
             Writeln(ms, $"{_company?.Description}", COLS);
-
+            Writeln(ms, $"{_branche?.Street}, {_branche?.HouseNumber} - {_branche?.Neighborhood} - {_branche?.CityId} - {_branche?.StateId} - CEP: {_branche?.PostalCode}", 50);
+            EscPos_Align(ms, 1);
+            Writeln(ms, $"CNPJ: {_branche?.Cnpj} " + $"IE: {_branche?.StateRegistration}", COLS);
             EscPos_Align(ms, 0);
 
-            Writeln(ms, $"{_branche?.Street}, {_branche?.HouseNumber} - {_branche?.Neighborhood} - {_branche?.CityId} - {_branche?.StateId} - CEP: {_branche?.PostalCode}", COLS);
+            EscPos_FontB(ms);
+           
+            EscPos_Align(ms, ESQUERDA);
 
-            EscPos_Align(ms, 1); // 0=esquerda, 1=centro, 2=direita
-            Writeln(ms, $"IE: {_branche?.StateRegistration}", COLS);
-            EscPos_Align(ms, 0); // volta para alinhamento à esquerda
-                                 // Fonte menor + line spacing baixo
-            EscPos_FontB(ms);                 // menor que a A
-            EscPos_SetLineSpacing(ms, 8);     // compacto (6–8 costuma ficar bom)  
-
-            Writeln(ms, $"Item Codigo Descricao        Qtde Un      Valor    Total");
+            WriteLineColumns(ms, new[] { "Item", "Codigo", "Descricao", "Qtde", "Un", "Valor", "Total" }, new[] { 5, 8, 20, 6, 3, 8, 8 });
+            
             int seq = 1;
             foreach (var it in invoice.Items)
             {
                 var code = !string.IsNullOrWhiteSpace(it.MaterialId) ? it.MaterialId : (it.MaterialId ?? "");
                 var desc = string.IsNullOrWhiteSpace(it.MaterialName) ? code : $"{it.MaterialName}";
-                EscPos_Align(ms, 0);
-                LeftRight(ms, $"{seq:000} {code} {desc}", $"", COLS);
+                EscPos_Align(ms, ESQUERDA);
+                Writeln(ms, $"{seq:000} {code} {desc}");
 
                 var un = string.IsNullOrWhiteSpace(it.UnitId) ? "UN" : it.UnitId.ToUpperInvariant();
                 var q = it.Quantity;
@@ -766,70 +808,68 @@ public partial class ConsumerSalePage : ContentPage
                 var tot = unit * q;
                 EscPos_Align(ms, 2);
                 Writeln(ms, $"{q:0.##} {un} x R$ {unit:N2} = R$ {tot:N2}", COLS);
-
                 seq++;
             }
 
             EscPos_Reset(ms);
-
-            Line(ms, COLS);
-            LeftRight(ms, "Qtde. total de itens", $"{invoice.Items.Sum(i => i.Quantity):0.##}", COLS);
+            Writeln(ms, "");
+            EscPos_Align(ms, DIREITA);
+            //Line(ms, COLS);
+            Write(ms, "Qtde. total de itens " + $"{invoice.Items.Sum(i => i.Quantity):0.##}");
+            EscPos_Align(ms, ESQUERDA);
+            Writeln(ms, "");
 
             // ----- Totais -----
             var vSub = invoice.Items.Sum(i => i.UnitPrice * i.Quantity);
-            var vDesc = 0; //invoice.Discount ?? 0m;
-            var vAcres = 0; // invoice.Surcharge ?? 0m;
+            var vDesc = 0m; // ajuste se houver
+            var vAcres = 0m; // ajuste se houver
             var vTotal = vSub - vDesc + vAcres;
 
             if (vDesc > 0) LeftRight(ms, "Descontos", $"R$ {vDesc:N2}", COLS);
             if (vAcres > 0) LeftRight(ms, "Acréscimos", $"R$ {vAcres:N2}", COLS);
 
             EscPos_Bold(ms, true);
-            LeftRight(ms, "VALOR TOTAL R$", $"{vTotal:N2}", COLS);
+            EscPos_Align(ms, DIREITA);
+            Write(ms, "VALOR TOTAL R$" + $"{vTotal:N2}", COLS);
+            Writeln(ms, "");
             EscPos_Bold(ms, false);
-            // ----- Informações complementares / IBPT -----
+
+            EscPos_Align(ms, ESQUERDA);
+
+            // ----- Info Complementares / IBPT -----
             if (!string.IsNullOrWhiteSpace(invoice.AdditionalInfo))
             {
-                // largura maior só para este bloco
-                const int INFO_COLS = 42; // ajuste conforme sua bobina (ex.: 40 ou 42 chars)
-
-                Line(ms, COLS);
+                const int INFO_COLS = 42;
+                //Line(ms, COLS);
                 EscPos_Bold(ms, true);
-                Writeln(ms, "INFORMACOES COMPLEMENTARES", COLS); // sem acento por segurança ESC/POS
+                Writeln(ms, "INFORMACOES COMPLEMENTARES", COLS);
                 EscPos_Bold(ms, false);
-
                 foreach (var line in Wrap(invoice.AdditionalInfo, INFO_COLS))
                     Writeln(ms, line, INFO_COLS);
             }
 
-
-            // ----- Formas de pagamento (como no cupom) -----
+            // ----- Pagamentos -----
             if (invoice.InvoicePayments?.Any() == true)
             {
                 Writeln(ms, "FORMA DE PAGAMENTO", COLS);
                 foreach (var p in invoice.InvoicePayments)
-                {
-                    // Ex.: "Cartão de Crédito Visa            139,98"
                     LeftRight(ms, p.PaymentId.ToString(), $"{p.Amount:N2}", COLS);
-                }
             }
 
-            Line(ms, COLS);
+            //Line(ms, COLS);
 
-            // Fonte menor + line spacing baixo
-            EscPos_FontB(ms);                 // menor que a A
-            EscPos_SetLineSpacing(ms, 6);     // compacto (6–8 costuma ficar bom)
-            // ----- Consulta por chave/URL -----
+            EscPos_FontB(ms);
+            EscPos_SetLineSpacing(ms, 6);
+
+            // ----- Consulta -----
             Writeln(ms, "Consulte pela Chave de Acesso em", COLS);
             Writeln(ms, "https://www.nfce.fazenda.sp.gov.br/consulta", COLS);
             if (!string.IsNullOrWhiteSpace(invoice.NfKey))
-                Writeln(ms, Regex.Replace(invoice.NfKey, ".{4}", "$0 ").Trim(), COLS); // agrupa de 4 em 4
+                Writeln(ms, Regex.Replace(invoice.NfKey, ".{4}", "$0 ").Trim(), COLS);
 
             // ----- Consumidor -----
-            if (!string.IsNullOrWhiteSpace(invoice.Customer.Document))
-            {
+            if (!string.IsNullOrWhiteSpace(invoice.Customer?.Document))
                 Writeln(ms, $"CONSUMIDOR - CPF {CpfMask((invoice.Customer.Document))}", COLS);
-            }
 
             var dataAut = invoice.AuthorizationDate?.ToString("dd/MM/yyyy HH:mm:ss");
             var dataEmi = invoice.IssueDate.ToString("dd/MM/yyyy HH:mm:ss");
@@ -840,33 +880,76 @@ public partial class ConsumerSalePage : ContentPage
             if (!string.IsNullOrWhiteSpace(dataAut))
                 Writeln(ms, $"Data de Autorização: {dataAut}", COLS);
 
-            // ----- QR Code -----
+            //// ----- QR Code -----
+            //EscPos_Align(ms, 1);
+            //var qr = BuildQrCodeEscPos(qrCodeUrl);
+            //ms.Write(qr, 0, qr.Length);
+            //EscPos_Align(ms, 0);
+
+            // ----- QR como RASTER (compatível com seu emulador e com impressoras reais) -----
             EscPos_Align(ms, 1);
-            var qr = BuildQrCodeEscPos(qrCodeUrl);
-            ms.Write(qr, 0, qr.Length);
+            var qrRaster = BuildQrRasterEscPosMaui(qrCodeUrl, sizePx: 256); // 256 ~ bom para 58/80mm
+            ms.Write(qrRaster, 0, qrRaster.Length);
             EscPos_Align(ms, 0);
 
 
             EscPos_Feed(ms, 3);
             EscPos_Cut(ms);
 
+            // ===== payload final =====
             var payload = ms.ToArray();
 
-            // ===== Envio TCP (mantendo seu "header" com o nome da impressora) =====
+            // ===== prefixo/header com nome da impressora (se seu emulador espera isso) =====
+            var header = Encoding.UTF8.GetBytes(((userConfig.PrinterName ?? DefaultPrinterName) + "\n"));
+            var fullPayload = Combine(header, payload);
+
+            // ===== (B) ENVIO TCP (como já fazia) =====
             using var client = new TcpClient();
-            await client.ConnectAsync(userConfig.PrinterIp, userConfig.PrinterPort).ConfigureAwait(false);
+            var connectTask = userConfig.PrinterPort;
+            await client.ConnectAsync(userConfig.PrinterIp, connectTask).ConfigureAwait(false);
             using var stream = client.GetStream();
 
-            var header = Encoding.UTF8.GetBytes((userConfig.PrinterName ?? DefaultPrinterName) + "\n");
-            await stream.WriteAsync(header, 0, header.Length).ConfigureAwait(false);
-            await stream.WriteAsync(payload, 0, payload.Length).ConfigureAwait(false);
+            await stream.WriteAsync(fullPayload, 0, fullPayload.Length).ConfigureAwait(false);
             await stream.FlushAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await _toastService.ShowToast($"Falha ao enviar impressão: {ex.Message}");
+            await _toastService.ShowToast($"Falha ao gerar/enviar impressão: {ex.Message}");
         }
     }
+
+    static void WriteLineColumns(Stream s, string[] texts, int[] widths)
+    {
+        if (texts.Length != widths.Length)
+            throw new ArgumentException("Texts e widths devem ter o mesmo comprimento.");
+
+        var sb = new StringBuilder();
+        for (int i = 0; i < texts.Length; i++)
+        {
+            var txt = ToAsciiEscPos(texts[i] ?? "");
+            // Garante que o texto cabe na largura da coluna
+            if (txt.Length > widths[i])
+                txt = txt.Substring(0, widths[i]);
+            sb.Append(txt.PadRight(widths[i]));
+        }
+
+        var bytes = Enc1252.GetBytes(sb.ToString());
+        s.Write(bytes, 0, bytes.Length);
+        //s.WriteByte(0x0A); // Apenas uma quebra de linha ao final
+    }
+
+
+    
+    // ===== Helpers =====
+    private static byte[] Combine(byte[] a, byte[] b)
+    {
+        var r = new byte[a.Length + b.Length];
+        Buffer.BlockCopy(a, 0, r, 0, a.Length);
+        Buffer.BlockCopy(b, 0, r, a.Length, b.Length);
+        return r;
+    }
+      
+
 
     private static readonly Encoding Enc1252 =
      CodePagesEncodingProvider.Instance.GetEncoding(1252); // ou Encoding.GetEncoding(1252)
@@ -880,6 +963,17 @@ public partial class ConsumerSalePage : ContentPage
         s.Write(bytes, 0, bytes.Length);
         s.Write(new byte[] { 0x1B, 0x33, 6, 0x0A }, 0, 4); // bem compacto
 
+    }
+
+    static void Write(Stream s, string text, int width = 48)
+    {
+        text = ToAsciiEscPos(text);
+
+        var bytes = Enc1252.GetBytes(text ?? "");
+        s.Write(bytes, 0, bytes.Length);
+
+        // apenas define espaçamento compacto, sem enviar LF
+        s.Write(new byte[] { 0x1B, 0x33, 6 }, 0, 3);
     }
 
 
@@ -995,6 +1089,97 @@ public partial class ConsumerSalePage : ContentPage
         ms.Write(model); ms.Write(ecc); ms.Write(size); ms.Write(store); ms.Write(payload); ms.Write(print);
         return ms.ToArray();
     }
+
+    static byte[] BuildQrRasterEscPosMaui(string data, int sizePx = 256)
+    {
+        if (string.IsNullOrWhiteSpace(data)) data = " ";
+
+        // 1) Gera a imagem do QR como RGBA (sem System.Drawing)
+        var writer = new ZXing.BarcodeWriterPixelData
+        {
+            Format = ZXing.BarcodeFormat.QR_CODE,
+            Options = new EncodingOptions
+            {
+                Width = sizePx,
+                Height = sizePx,
+                Margin = 0,        // sem quiet zones extras (ajuste se quiser)
+                PureBarcode = true
+            }
+        };
+
+        var pixelData = writer.Write(data); // pixelData.Pixels = RGBA (4 bytes por pixel)
+
+        int srcWidth = pixelData.Width;
+        int srcHeight = pixelData.Height;
+
+        // 2) Ajusta largura para múltiplo de 8 (requisito ESC/POS raster)
+        int width = ((srcWidth + 7) / 8) * 8;
+        int height = srcHeight;
+
+        // Se precisar padding horizontal, cria um buffer RGBA mais largo (fundo branco)
+        var rgba = pixelData.Pixels;
+        if (width != srcWidth)
+        {
+            var padded = new byte[width * height * 4];
+            // preenche branco
+            for (int i = 0; i < padded.Length; i += 4)
+            {
+                padded[i + 0] = 0xFF; // R
+                padded[i + 1] = 0xFF; // G
+                padded[i + 2] = 0xFF; // B
+                padded[i + 3] = 0xFF; // A
+            }
+            // copia cada linha no canto esquerdo
+            for (int y = 0; y < height; y++)
+            {
+                Buffer.BlockCopy(rgba, y * srcWidth * 4, padded, y * width * 4, srcWidth * 4);
+            }
+            rgba = padded;
+        }
+
+        // 3) Converte RGBA para 1bpp (preto=1, branco=0), MSB->LSB
+        int bytesPerRow = width / 8;
+        var mono = new byte[bytesPerRow * height];
+
+        for (int y = 0; y < height; y++)
+        {
+            int rowOfs = y * bytesPerRow;
+            int rgbaOfs = y * width * 4;
+
+            for (int x = 0; x < width; x++)
+            {
+                int p = rgbaOfs + (x * 4);
+                byte r = rgba[p + 0];
+                byte g = rgba[p + 1];
+                byte b = rgba[p + 2];
+
+                // limiar: abaixo de 128 é preto
+                int lum = (r * 299 + g * 587 + b * 114) / 1000;
+                if (lum < 128)
+                {
+                    mono[rowOfs + (x >> 3)] |= (byte)(0x80 >> (x & 7));
+                }
+            }
+        }
+
+        // 4) Monta comando ESC/POS: GS v 0 m xL xH yL yH [data]
+        byte m = 0x00;                                        // modo normal
+        byte xL = (byte)(bytesPerRow & 0xFF);
+        byte xH = (byte)((bytesPerRow >> 8) & 0xFF);
+        byte yL = (byte)(height & 0xFF);
+        byte yH = (byte)((height >> 8) & 0xFF);
+
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x1D); ms.WriteByte(0x76); ms.WriteByte(0x30); ms.WriteByte(m);
+        ms.WriteByte(xL); ms.WriteByte(xH); ms.WriteByte(yL); ms.WriteByte(yH);
+        ms.Write(mono, 0, mono.Length);
+
+        // LF após a imagem (ajuda alguns parsers/emuladores)
+        ms.WriteByte(0x0A);
+
+        return ms.ToArray();
+    }
+
 
     #endregion  Impressão NFC-e via ESC/POS
 
@@ -1348,22 +1533,27 @@ public partial class ConsumerSalePage : ContentPage
         }
     }
 
+    bool _navigating = false;
+    DateTime _lastNavigate = DateTime.MinValue;
+
+
+
 
     private void OnProductCodeUnfocused(object sender, FocusEventArgs e)
     {
-        if (_handlingUnfocus) return;    // evita reentrância
-        _handlingUnfocus = true;
+        //if (_handlingUnfocus) return;    // evita reentrância
+        //_handlingUnfocus = true;
 
-        try
-        {
-            // cancela buscas pendentes e esconde sem mexer em foco
-            _typeDebounceCts?.Cancel();
-            ProductSuggestions.Clear();
-        }
-        finally
-        {
-            _handlingUnfocus = false;
-        }
+        //try
+        //{
+        //    // cancela buscas pendentes e esconde sem mexer em foco
+        //    _typeDebounceCts?.Cancel();
+        //    ProductSuggestions.Clear();
+        //}
+        //finally
+        //{
+        //    _handlingUnfocus = false;
+        //}
     }
     private void OnItemTapped(object sender, TappedEventArgs e)
     {
@@ -1386,15 +1576,7 @@ public partial class ConsumerSalePage : ContentPage
 
     private void OnSuggestionChosen(object sender, EventArgs e)
     {
-        if (sender is AutoCompleteEntry ac && ac.SelectedSuggestion is ProductSuggestion chosen)
-        {
-            _suppressTextChanged = true;
-            entryProductCode.Text = chosen.Id;
-            _suppressTextChanged = false;
 
-            OnProductCodeEntered(entryProductCode, EventArgs.Empty);
-            entryQuantity?.Focus();
-        }
     }
 
 
