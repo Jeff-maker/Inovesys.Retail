@@ -9,8 +9,8 @@
 
 
             <MenuFlyoutItem x:Name="miCancelarItem"
-            Text="Cancelar produto (F2)"
-            Clicked="OnCancelItemClicked">
+                    Text="Cancelar produto (F2)"
+                    Clicked="OnCancelItemClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F2" />
                 </MenuFlyoutItem.KeyboardAccelerators>
@@ -32,9 +32,13 @@
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
 
-
-
-
+            <MenuFlyoutItem x:Name="miEditQu"
+                      Text="Editar Quantidade(F3)"
+                      Clicked="OnEditQuant">
+                                    <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F3" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
 
         </MenuBarItem>
     </ContentPage.MenuBarItems>
@@ -158,6 +162,7 @@
 
                                 <Label TextColor="White" Grid.Column="1" Text="{Binding Price, StringFormat='R$ {0:F2}'}" FontSize="16" HorizontalTextAlignment="End" VerticalOptions="Center"/>
                                 <Entry
+                                                AutomationId = "QtyEntry"            
                                                 Grid.Column="2"
                                                 Text="{Binding Quantity, Mode=TwoWay, StringFormat='{0:N0}'}"
                                                 FontSize="12"
@@ -169,7 +174,8 @@
                                                 TextColor="White"
                                                 BackgroundColor="#1E88E5"
                                                 WidthRequest="40"
-                                                HorizontalOptions="Center" />
+                                                HorizontalOptions="Center"
+                                    Completed="Entry_Completed"/>
 
                                 <Label TextColor="White" Grid.Column="3" Text="{Binding Total, StringFormat='R$ {0:F2}'}" FontSize="16" HorizontalTextAlignment="End" VerticalOptions="Center"/>
                             </Grid>

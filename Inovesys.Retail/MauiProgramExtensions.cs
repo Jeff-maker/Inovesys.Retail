@@ -27,7 +27,7 @@ public static class MauiProgramExtensions
             return client;
         });
 
-
+        
         builder.Services.AddTransient<MainPage>();
         builder.Services.AddTransient<LoginPage>();
         builder.Services.AddTransient<SettingsPage>();

@@ -16,6 +16,7 @@ using System.Xml.Serialization;
 using ZXing.Net.Maui;
 using ZXing.Common;
 using ZXing;
+using Microsoft.Maui.Platform;
 
 namespace Inovesys.Retail.Pages;
 
@@ -279,6 +280,8 @@ public partial class ConsumerSalePage : ContentPage
     {
         var total = _items.Sum(i => i.Price * i.Quantity);
         lblTotal.Text = $"Total: R$ {total.ToString("N2", new CultureInfo("pt-BR"))}";
+        ProductSuggestions.Clear();
+
     }
 
 
@@ -359,7 +362,7 @@ public partial class ConsumerSalePage : ContentPage
         });
 
         entryProductCode.Text = string.Empty;
-        await Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
+        //await Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
         MainThread.BeginInvokeOnMainThread(() =>
         {
             entryProductCode.Focus();
@@ -367,7 +370,41 @@ public partial class ConsumerSalePage : ContentPage
         });
         entryQuantity.Text = "1";
         UpdateTotal();
+        FocusLastItemAsync();
     }
+
+
+    private void FocusLastItemAsync()
+    {
+
+        if (ItemsListView.ItemsSource is not IEnumerable<ConsumerSaleItem> src)
+            return;
+
+        var last = src.LastOrDefault();
+        if (last == null) return;
+
+        ItemsListView.SelectedItem = last;
+
+        // 🕐 Espera até que o item realmente apareça na tela (timeout de 1,5s)
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 1500)
+        {
+            if (TryFocusQtyEntry(last))
+                return;
+
+            Task.Delay(50); // tenta de novo a cada 50ms
+        }
+
+        // Se ainda não renderizou, tenta um foco forçado depois
+        MainThread.InvokeOnMainThreadAsync(() =>
+       {
+           ItemsListView.ScrollTo(last, position: ScrollToPosition.End, animate: false);
+       });
+
+    }
+
+
+
 
     private void OnCancelItemClicked(object sender, EventArgs e)
     {
@@ -377,6 +414,73 @@ public partial class ConsumerSalePage : ContentPage
             UpdateTotal();
         }
     }
+
+
+    private async void OnEditQuant(object sender, EventArgs e)
+    {
+        // 1) item alvo: selecionado ou último da fonte
+        var item = ItemsListView.SelectedItem as ConsumerSaleItem;
+        if (item == null && ItemsListView.ItemsSource is IEnumerable<ConsumerSaleItem> src)
+            item = src.LastOrDefault();
+
+        if (item == null) return;
+
+        // 2) seleciona e rola para garantir materialização do template
+        ItemsListView.SelectedItem = item;
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            ItemsListView.ScrollTo(item, position: ScrollToPosition.MakeVisible, animate: false);
+            await Task.Delay(120); // dá tempo de materializar
+        });
+
+        // 3) tenta localizar o Entry e focar
+        if (!TryFocusQtyEntry(item))
+        {
+            // fallback: tenta de novo um “tic” depois, se ainda não materializou
+            await Task.Delay(150);
+            TryFocusQtyEntry(item);
+        }
+    }
+
+    private bool TryFocusQtyEntry(ConsumerSaleItem target)
+    {
+        foreach (var v in GetVisualDescendants(ItemsListView))
+        {
+            if (v is Entry entry &&
+                entry.AutomationId == "QtyEntry" &&
+                ReferenceEquals(entry.BindingContext, target))
+            {
+                FocusQuantityEntry(entry);
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+
+    private void FocusQuantityEntry(Entry entry)
+    {
+        entry.Focus();
+        var txt = entry.Text ?? string.Empty;
+        entry.CursorPosition = 0;
+        entry.SelectionLength = txt.Length; // seleciona tudo p/ digitar por cima
+    }
+
+    private IEnumerable<VisualElement> GetVisualDescendants(Element root)
+    {
+        if (root is VisualElement ve)
+            yield return ve;
+
+        if (root is IElementController ctrl)
+        {
+            foreach (var child in ctrl.LogicalChildren)
+                foreach (var d in GetVisualDescendants(child))
+                    if (d is VisualElement dve)
+                        yield return dve;
+        }
+    }
+
 
     private void OnDiscountClicked(object sender, EventArgs e)
     {
@@ -789,11 +893,11 @@ public partial class ConsumerSalePage : ContentPage
             EscPos_Align(ms, 0);
 
             EscPos_FontB(ms);
-           
+
             EscPos_Align(ms, ESQUERDA);
 
             WriteLineColumns(ms, new[] { "Item", "Codigo", "Descricao", "Qtde", "Un", "Valor", "Total" }, new[] { 5, 8, 20, 6, 3, 8, 8 });
-            
+
             int seq = 1;
             foreach (var it in invoice.Items)
             {
@@ -939,7 +1043,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
 
-    
+
     // ===== Helpers =====
     private static byte[] Combine(byte[] a, byte[] b)
     {
@@ -948,7 +1052,7 @@ public partial class ConsumerSalePage : ContentPage
         Buffer.BlockCopy(b, 0, r, a.Length, b.Length);
         return r;
     }
-      
+
 
 
     private static readonly Encoding Enc1252 =
@@ -1521,7 +1625,7 @@ public partial class ConsumerSalePage : ContentPage
 
             ProductSuggestions.Clear();
             foreach (var p in results)
-                ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name });
+                ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name, Price = p.Price });
             entryProductCode.ItemsSource = ProductSuggestions;
         }
         catch (TaskCanceledException) { /* digitação contínua → esperado */ }
@@ -1536,24 +1640,22 @@ public partial class ConsumerSalePage : ContentPage
     bool _navigating = false;
     DateTime _lastNavigate = DateTime.MinValue;
 
-
-
-
     private void OnProductCodeUnfocused(object sender, FocusEventArgs e)
     {
-        //if (_handlingUnfocus) return;    // evita reentrância
-        //_handlingUnfocus = true;
+        if (_lastChosen != null)
+        {
+            // limpa sugestão destacada
 
-        //try
-        //{
-        //    // cancela buscas pendentes e esconde sem mexer em foco
-        //    _typeDebounceCts?.Cancel();
-        //    ProductSuggestions.Clear();
-        //}
-        //finally
-        //{
-        //    _handlingUnfocus = false;
-        //}
+            var z = sender as zoft.MauiExtensions.Controls.AutoCompleteEntry;
+            if (z.SelectedSuggestion == null) return;
+
+            if (z.SelectedSuggestion == _lastChosen)
+            {
+                //entryProductCode.Text = _lastChosen.Id;
+                OnProductCodeEntered(sender, e);
+            }
+            _lastChosen = null;
+        }
     }
     private void OnItemTapped(object sender, TappedEventArgs e)
     {
@@ -1574,9 +1676,23 @@ public partial class ConsumerSalePage : ContentPage
         // habilite/desabilite botões, etc.
     }
 
+    private ProductSuggestion? _lastChosen;
     private void OnSuggestionChosen(object sender, EventArgs e)
     {
 
+        var z = e as zoft.MauiExtensions.Controls.AutoCompleteEntrySuggestionChosenEventArgs;
+        if (z == null) return;
+        if (z.SelectedItem is ProductSuggestion sel)
+        {
+            // Evita “fechar/confirmar” se só mudou o highlight com as setas
+            if (ReferenceEquals(_lastChosen, sel))
+                return;
+
+            _lastChosen = sel;
+
+
+            // … sua lógica (ex: adicionar na lista) …
+        }
     }
 
 
@@ -1601,7 +1717,10 @@ public partial class ConsumerSalePage : ContentPage
         }
     }
 
-
+    private void Entry_Completed(object sender, EventArgs e)
+    {
+        entryProductCode.Focus();
+    }
 }
 
 

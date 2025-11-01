@@ -41,6 +41,11 @@ namespace Inovesys.Retail.Services
     {
         public string Id { get; set; } = "";  // mapeia Material.Id
         public string Name { get; set; } = "";  // mapeia Material.Name
+
+        // novos campos:
+        public decimal? Price { get; set; }      // preço por unidade básica (pode ser null se não houver preço)
+        public string PriceUnit { get; set; }   // unidade do preço (ex.: "UN", "KG")
+
     }
 
     public class ProductRepositoryLiteDb : IProductRepository
@@ -82,73 +87,83 @@ namespace Inovesys.Retail.Services
             col.EnsureIndex(x => x.Ean13, unique: false);
             col.EnsureIndex(x => x.Name, unique: false);
             col.EnsureIndex(x => x.ClientId, unique: false);
+
+
+            var priceCol = _db.GetCollection<MaterialPrice>("materialprice");
+            priceCol.EnsureIndex(x => x.ClientId, unique: false);
+            priceCol.EnsureIndex(x => x.MaterialId, unique: false);
+            priceCol.EnsureIndex(x => x.MaterialUnit, unique: false);
+            priceCol.EnsureIndex(x => x.StartDate, unique: false);
+            priceCol.EnsureIndex(x => x.EndDate, unique: false);
+
         }
 
         public async Task<IReadOnlyList<ProductDto>> FindAsync(
-            string term,
-            int limit,
-            bool preferCode,
-            int clientId,
-            CancellationToken ct)
+                              string term,
+                              int limit,
+                              bool preferCode,
+                              int clientId,
+                              CancellationToken ct)
         {
             return await Task.Run(() =>
             {
                 var col = _db.GetCollection<Material>("material");
-                var list = new List<ProductDto>(limit);
+                var materialsFound = new List<Material>(limit);
 
                 term = (term ?? "").Trim();
-                if (string.IsNullOrEmpty(term)) return (IReadOnlyList<ProductDto>)list;
+                if (string.IsNullOrEmpty(term)) return Array.Empty<ProductDto>();
 
                 // Preparos para LIKE (case-insensitive via UPPER)
                 string like = "%" + term.ToUpperInvariant() + "%";
 
-                // Helper de mapeamento
-                static ProductDto Map(Material m) => new() { Id = m.Id, Name = m.Name };
+                // Helper interno para adicionar materiais evitando duplicados e respeitando o limit
+                void AddRangeNoDup(IEnumerable<Material> items)
+                {
+                    var seen = new HashSet<string>(
+                        materialsFound.Select(x => x.Id),
+                        StringComparer.OrdinalIgnoreCase
+                    );
 
-                // Quando preferCode = true, prioriza EAN/ID prefixo e completa por nome
+                    foreach (var m in items)
+                    {
+                        if (materialsFound.Count >= limit) break;
+                        if (seen.Add(m.Id))
+                            materialsFound.Add(m);
+                    }
+                }
+
                 if (preferCode)
                 {
                     // 1) EAN13 exato (se só dígitos com 8+)
-                    if (term.All(char.IsDigit) && term.Length >= 8)
+                    if (term.All(char.IsDigit) && term.Length >= 8 && materialsFound.Count < limit)
                     {
                         var byEanExact = col.Query()
                             .Where("($.client_id = @0) AND ($.ean_13 = @1)", clientId, term)
                             .OrderBy("$.ean_13")
                             .Limit(limit)
                             .ToList();
-                        list.AddRange(byEanExact.Select(Map));
+                        AddRangeNoDup(byEanExact);
                     }
 
-                    // 2) EAN prefixo (LiteDB não suporta STARTSWITH, usa LIKE)
-                    if (list.Count < limit)
+                    // 2) EAN prefixo (LIKE + "%")
+                    if (materialsFound.Count < limit)
                     {
-                        var remain = limit - list.Count;
+                        var remain = limit - materialsFound.Count;
                         var termUpper = term.ToUpperInvariant();
 
                         var byEanPrefix = col.Query()
-                            // LIKE + "%" → busca prefixo; UPPER para case-insensitive
                             .Where("( $.client_id = @0 ) AND ( UPPER($.ean_13) LIKE @1 )", clientId, termUpper + "%")
                             .OrderBy("$.ean_13")
                             .Limit(remain)
                             .ToList();
 
-                        // evita duplicar registros já adicionados
-                        var seen = new HashSet<string>(
-                            list.Select(x => x.Id),
-                            StringComparer.OrdinalIgnoreCase
-                        );
-
-                        foreach (var m in byEanPrefix)
-                        {
-                            if (seen.Add(m.Id))
-                                list.Add(Map(m));
-                        }
+                        AddRangeNoDup(byEanPrefix);
                     }
 
-                    // 3) ID prefixo (LiteDB não suporta STARTSWITH, usa LIKE)
-                    if (list.Count < limit)
+                    // 3) ID prefixo (LIKE + "%")
+                    if (materialsFound.Count < limit)
                     {
-                        var remain = limit - list.Count;
+                        var remain = limit - materialsFound.Count;
                         var termUpper = term.ToUpperInvariant();
 
                         var byIdPrefix = col.Query()
@@ -157,37 +172,26 @@ namespace Inovesys.Retail.Services
                             .Limit(remain)
                             .ToList();
 
-                        // evita duplicar registros já adicionados
-                        var seen = new HashSet<string>(
-                            list.Select(x => x.Id),
-                            StringComparer.OrdinalIgnoreCase
-                        );
-
-                        foreach (var m in byIdPrefix)
-                        {
-                            if (seen.Add(m.Id))
-                                list.Add(Map(m));
-                        }
+                        AddRangeNoDup(byIdPrefix);
                     }
 
-                    // 4) Nome contém (case-insensitive via UPPER)
-                    if (list.Count < limit)
+                    // 4) Nome contém
+                    if (materialsFound.Count < limit)
                     {
-
-                        var remain = limit - list.Count;
+                        var remain = limit - materialsFound.Count;
 
                         var byName = col.Query()
                             .Where("(UPPER($.name) LIKE @0) AND ($.client_id = @1)", like, clientId)
                             .OrderBy("$.name")
                             .Limit(remain)
                             .ToList();
-                        var seen = new HashSet<string>(list.Select(x => x.Id), StringComparer.OrdinalIgnoreCase);
-                        foreach (var m in byName) if (seen.Add(m.Id)) list.Add(Map(m));
+
+                        AddRangeNoDup(byName);
                     }
                 }
                 else
                 {
-         
+                    // Busca por nome tokenizada e "folded"
                     var tokens = TextFold.Fold(term)
                         .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
 
@@ -195,18 +199,19 @@ namespace Inovesys.Retail.Services
 
                     var byName = col.Query()
                         .Where($@"($.client_id = @0) AND (
-                                    {BuildFoldExpr("$.name")} LIKE @1
-                                  )", new BsonValue(clientId), new BsonValue(likeInOrder))
-                            .OrderBy("$.name")
-                            .Limit(limit)
-                            .ToList();
+                            {BuildFoldExpr("$.name")} LIKE @1
+                          )",
+                               new BsonValue(clientId), new BsonValue(likeInOrder))
+                        .OrderBy("$.name")
+                        .Limit(limit)
+                        .ToList();
 
-                    list.AddRange(byName.Select(Map));
+                    AddRangeNoDup(byName);
 
-                    // Completa com ID prefixo (case-insensitive; LiteDB não tem STARTSWITH)
-                    if (list.Count < limit)
+                    // Completa com ID prefixo
+                    if (materialsFound.Count < limit)
                     {
-                        var remain = limit - list.Count;
+                        var remain = limit - materialsFound.Count;
                         var termUpper = term.ToUpperInvariant();
 
                         var byIdPrefix = col.Query()
@@ -215,66 +220,127 @@ namespace Inovesys.Retail.Services
                             .Limit(remain)
                             .ToList();
 
-                        // OBS: se seu DTO usa Code em vez de Id, troque x.Id por x.Code abaixo
-                        var seen = new HashSet<string>(list.Select(x => x.Id), StringComparer.OrdinalIgnoreCase);
-                        foreach (var m in byIdPrefix)
-                            if (seen.Add(m.Id))
-                                list.Add(Map(m));
+                        AddRangeNoDup(byIdPrefix);
                     }
 
-                    // E completa com EAN prefixo
-                    // Completa com ID prefixo (case-insensitive; LiteDB não tem STARTSWITH)
-                    if (list.Count < limit)
+                    // Completa com EAN prefixo (se quiser manter)
+                    if (materialsFound.Count < limit)
                     {
-                        var remain = limit - list.Count;
+                        var remain = limit - materialsFound.Count;
                         var termUpper = term.ToUpperInvariant();
 
-                        var byIdPrefix = col.Query()
-                            // UPPER para tornar a busca case-insensitive
-                            .Where("( $.client_id = @0 ) AND ( UPPER($.id) LIKE @1 )", clientId, termUpper + "%")
-                            .OrderBy("$.id")
+                        var byEanPrefix = col.Query()
+                            .Where("( $.client_id = @0 ) AND ( UPPER($.ean_13) LIKE @1 )", clientId, termUpper + "%")
+                            .OrderBy("$.ean_13")
                             .Limit(remain)
                             .ToList();
 
-                        // Evita duplicados já adicionados na lista anterior
-                        var seen = new HashSet<string>(
-                            list.Select(x => x.Id),
-                            StringComparer.OrdinalIgnoreCase
-                        );
-
-                        foreach (var m in byIdPrefix)
-                        {
-                            if (seen.Add(m.Id))
-                                list.Add(Map(m));
-                        }
+                        AddRangeNoDup(byEanPrefix);
                     }
                 }
 
-                return (IReadOnlyList<ProductDto>)list;
+                // === Projeção final para DTO com preço/unidade ===
+                // ATENÇÃO: ajuste 'm.BaseUnit' para o nome correto no seu Material (ex.: MEINS/Unit/MeasureUnit).
+                string GetBaseUnit(Material m) => m.BasicUnit; // <-- ajuste aqui se necessário
+
+                var dtoList = new List<ProductDto>(materialsFound.Count);
+                foreach (var m in materialsFound)
+                {
+                    var baseUnit = GetBaseUnit(m);
+                    var (price, unit) = GetCurrentPriceForMaterialUnit(clientId, m.Id, baseUnit);
+
+                    dtoList.Add(new ProductDto
+                    {
+                        Id = m.Id,
+                        Name = m.Name,
+                        Price = price,
+                        // se não houver preço vigente, usa a unidade base do material como fallback visual
+                        PriceUnit = unit ?? baseUnit
+                    });
+
+                    if (dtoList.Count >= limit) break;
+                }
+
+                return (IReadOnlyList<ProductDto>)dtoList;
             }, ct);
         }
 
-        static string FoldExpr(string field)
-        {
-            // mapeamento mínimo PT-BR; amplie se precisar
-            var pairs = new (string fromChar, string toChar)[] {
-                            ("Á","A"),("À","A"),("Â","A"),("Ã","A"),("Ä","A"),
-                            ("á","a"),("à","a"),("â","a"),("ã","a"),("ä","a"),
-                            ("É","E"),("È","E"),("Ê","E"),("Ë","E"),
-                            ("é","e"),("è","e"),("ê","e"),("ë","e"),
-                            ("Í","I"),("Ì","I"),("Î","I"),("Ï","I"),
-                            ("í","i"),("ì","i"),("î","i"),("ï","i"),
-                            ("Ó","O"),("Ò","O"),("Ô","O"),("Õ","O"),("Ö","O"),
-                            ("ó","o"),("ò","o"),("ô","o"),("õ","o"),("ö","o"),
-                            ("Ú","U"),("Ù","U"),("Û","U"),("Ü","U"),
-                            ("ú","u"),("ù","u"),("û","u"),("ü","u"),
-                            ("Ç","C"),("ç","c")
-             };
 
-            var expr = field;
-            foreach (var p in pairs) expr = $"REPLACE({expr}, '{p.fromChar}', '{p.toChar}')";
-            return $"UPPER({expr})";
+
+        private (decimal? price, string unit) GetCurrentPriceForMaterialUnit(
+                                int clientId,
+                                string materialId,
+                                string baseUnit)
+        {
+            if (string.IsNullOrWhiteSpace(materialId))
+                return (null, null);
+
+            var priceCol = _db.GetCollection<MaterialPrice>("materialprice");
+            var now = DateTime.UtcNow; // ou DateTime.Now, conforme seu padrão
+
+            // 1) Tenta vigente COM unidade básica igual
+            if (!string.IsNullOrWhiteSpace(baseUnit))
+            {
+                var valid = priceCol.Query()
+                    .Where(@"($.client_id = @0)
+                     AND ($.material_id = @1)
+                     AND ($.material_unit = @2)
+                     AND ($.start_date <= @3)
+                     AND ($.end_date >= @3)",
+                           clientId, materialId, baseUnit, now)
+                    .OrderByDescending("$.start_date")
+                    .Limit(1)
+                    .ToList();
+
+                if (valid.Count > 0)
+                    return (valid[0].Price, valid[0].MaterialUnit);
+            }
+
+            // 2) Se não achou vigente na unidade básica, tenta vigente em qualquer unidade
+            var anyValid = priceCol.Query()
+                .Where(@"($.client_id = @0)
+                 AND ($.material_id = @1)
+                 AND ($.start_date <= @2)
+                 AND ($.end_date >= @2)",
+                       clientId, materialId, now)
+                .OrderByDescending("$.start_date")
+                .Limit(1)
+                .ToList();
+
+            if (anyValid.Count > 0)
+                return (anyValid[0].Price, anyValid[0].MaterialUnit);
+
+            // 3) Fallback: último preço (mais recente) na unidade básica
+            if (!string.IsNullOrWhiteSpace(baseUnit))
+            {
+                var latestSameUnit = priceCol.Query()
+                    .Where(@"($.client_id = @0)
+                     AND ($.material_id = @1)
+                     AND ($.material_unit = @2)",
+                           clientId, materialId, baseUnit)
+                    .OrderByDescending("$.start_date")
+                    .Limit(1)
+                    .ToList();
+
+                if (latestSameUnit.Count > 0)
+                    return (latestSameUnit[0].Price, latestSameUnit[0].MaterialUnit);
+            }
+
+            // 4) Último preço em qualquer unidade (como último recurso)
+            var latestAny = priceCol.Query()
+                .Where(@"($.client_id = @0)
+                 AND ($.material_id = @1)",
+                       clientId, materialId)
+                .OrderByDescending("$.start_date")
+                .Limit(1)
+                .ToList();
+
+            if (latestAny.Count > 0)
+                return (latestAny[0].Price, latestAny[0].MaterialUnit);
+
+            return (null, null);
         }
+
     }
 
 
