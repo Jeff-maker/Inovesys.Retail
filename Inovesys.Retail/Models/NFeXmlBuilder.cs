@@ -19,8 +19,9 @@ namespace Inovesys.Retail.Models
         private readonly LiteDbService _liteDbService;
         private readonly Branche _branche;
         private readonly Company _company;
+        private readonly X509Certificate2 _x509Certificate2;
 
-        public NFeXmlBuilder(Invoice invoice, string environmentSefaz, LiteDbService liteDbService, Branche branche, Company company)
+        public NFeXmlBuilder(Invoice invoice, string environmentSefaz, LiteDbService liteDbService, Branche branche, Company company, X509Certificate2 x509Certificate2)
         {
             _invoice = invoice;
 
@@ -30,6 +31,7 @@ namespace Inovesys.Retail.Models
             _liteDbService = liteDbService;
             _branche = branche;
             _company = company;
+            _x509Certificate2 = x509Certificate2;
         }
 
         public (XmlDocument Xml, string QrCode, string dateHoraEmissao, Exception? Error) Build()
@@ -672,7 +674,7 @@ namespace Inovesys.Retail.Models
         {
             try
             {
-                var cert = SefazHelpers.LoadCertificate(_company.CertificateId, _branche.ClientId, _liteDbService);
+                var cert = _x509Certificate2;
                 if (cert == null)
                     throw new Exception("Certificado não encontrado.");
 

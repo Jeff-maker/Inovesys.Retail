@@ -22,54 +22,92 @@ namespace Inovesys.Retail
                 ?? throw new Exception("Certificado não encontrado.");
 
             if (certInfo.PfxFile == null || certInfo.PfxFile.Length == 0)
-            {
                 throw new Exception("O arquivo do certificado está vazio ou não foi fornecido.");
-            }
 
-            helpers = helpers ?? new Helpers(_configuration);
+            if (certInfo.PfxFile.Length < 1000)
+                throw new Exception("O conteúdo do PFX parece incorreto (tamanho muito pequeno).");
 
+            helpers ??= new Helpers(_configuration);
             if (helpers == null)
-            {
-                throw new Exception("helpers == null");
-            }
+                throw new Exception("Falha interna: helpers == null.");
 
             try
             {
-                var password = helpers.Descriptografar(certInfo.Password);
+                var password = helpers.Descriptografar(certInfo.Password) ?? string.Empty;
 
+                X509KeyStorageFlags flags;
 
-
-                // Flags recomendadas para certificados A1
-#pragma warning disable SYSLIB0057 // O tipo ou membro é obsoleto
-                var certificate = new X509Certificate2(
-                          certInfo.PfxFile,
-                          password,
-                          X509KeyStorageFlags.UserKeySet | // 🔑 Usa perfil do usuário, compatível com MAUI/WinUI
-                          X509KeyStorageFlags.PersistKeySet |
-                          X509KeyStorageFlags.Exportable);
-
-                // Verifica se a chave privada está disponível
-                if (!certificate.HasPrivateKey)
+                if (OperatingSystem.IsWindows())
                 {
-                    throw new Exception("O certificado não contém uma chave privada válida.");
+                    // 💻 Windows usa persistência local no perfil do usuário
+                    flags = X509KeyStorageFlags.UserKeySet |
+                            X509KeyStorageFlags.PersistKeySet |
+                            X509KeyStorageFlags.Exportable;
+                }
+                else if (OperatingSystem.IsAndroid())
+                {
+                    // 🤖 Android precisa ser efêmero para evitar falhas no KeyStore
+                    flags = X509KeyStorageFlags.EphemeralKeySet |
+                            X509KeyStorageFlags.Exportable;
+                }
+                else
+                {
+                    // 🍎 iOS/macOS também usa efêmero
+                    flags = X509KeyStorageFlags.EphemeralKeySet |
+                            X509KeyStorageFlags.Exportable;
                 }
 
+                //var certificate = new X509Certificate2(certInfo.PfxFile, password, flags);
 
-                if (certInfo.PfxFile == null || certInfo.PfxFile.Length < 1000)
-                    throw new Exception("O conteúdo binário do PFX está incorreto ou muito pequeno.");
 
-                var privateKey = certificate.GetRSAPrivateKey();
-                if (privateKey == null)
-                    throw new Exception("A chave privada RSA não pôde ser obtida.");
+                var certificate = X509CertificateLoader.LoadPkcs12(
+                           certInfo.PfxFile,
+                           password,
+                            flags);
 
+
+                //X509Certificate2 certificate;
+
+                //#if NET9_0_OR_GREATER
+                //                certificate = X509CertificateLoader.LoadPkcs12(certInfo.PfxFile, password, flags);
+                //#else
+                //#pragma warning disable SYSLIB0057
+                //        certificate = new X509Certificate2(certInfo.PfxFile, password, flags);
+                //#pragma warning restore SYSLIB0057
+                //#endif
+                //var certificate = new X509Certificate2(certInfo.PfxFile, password, flags);
+
+
+                //var certificate = X509CertificateLoader.LoadPkcs12(
+                //    certInfo.PfxFile,
+                //    password,
+                //    X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet);
+
+
+                // 🔍 Log básico de diagnóstico
+                System.Diagnostics.Debug.WriteLine($"[CERT] Subject={certificate.Subject}");
+                System.Diagnostics.Debug.WriteLine($"[CERT] HasPrivateKey={certificate.HasPrivateKey}");
+                System.Diagnostics.Debug.WriteLine($"[CERT] NotAfter={certificate.NotAfter:yyyy-MM-dd}");
+                System.Diagnostics.Debug.WriteLine($"[CERT] Thumbprint={certificate.Thumbprint}");
+
+                if (!certificate.HasPrivateKey)
+                    throw new Exception("O certificado foi carregado, mas não contém chave privada.");
+
+                // 🔐 Testa suporte RSA/ECDSA
+                using var rsa = certificate.GetRSAPrivateKey();
+                using var ecdsa = certificate.GetECDsaPrivateKey();
+
+                if (rsa is null && ecdsa is null)
+                    throw new Exception("Não foi possível obter a chave privada (RSA/ECDSA) do certificado.");
 
                 return certificate;
             }
             catch (CryptographicException ex)
             {
-                throw new Exception("Senha do certificado incorreta ou certificado inválido.", ex);
+                throw new Exception("Senha do certificado incorreta ou PFX inválido.", ex);
             }
         }
+
 
     }
 }

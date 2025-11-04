@@ -17,6 +17,7 @@ using ZXing.Net.Maui;
 using ZXing.Common;
 using ZXing;
 using Microsoft.Maui.Platform;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Inovesys.Retail.Pages;
 
@@ -33,6 +34,7 @@ public partial class ConsumerSalePage : ContentPage
     Client _client { set; get; }
     Company _company { set; get; }
     private readonly HttpClient _http;
+    private X509Certificate2 _x509Certificate2;
 
     private Branche _branche { set; get; }
 
@@ -76,8 +78,6 @@ public partial class ConsumerSalePage : ContentPage
                 foreach (var it in _items)
                     it.PropertyChanged += ItemOnPropertyChanged;
             }
-
-
         };
 
         // comando (genérico string!)
@@ -104,7 +104,7 @@ public partial class ConsumerSalePage : ContentPage
         userConfig = _db.GetCollection<UserConfig>("user_config").FindById("CURRENT");
         if (userConfig == null)
         {
-            await _toastService.ShowToast("Usuário não configurado.");
+            await _toastService.ShowToastAsync("Usuário não configurado.");
             return;
         }
 
@@ -112,7 +112,7 @@ public partial class ConsumerSalePage : ContentPage
 
         if (_client == null)
         {
-            await _toastService.ShowToast("Erro na leitura de cliente.");
+            await _toastService.ShowToastAsync("Erro na leitura de cliente.");
             return;
         }
 
@@ -123,7 +123,7 @@ public partial class ConsumerSalePage : ContentPage
 
         if (_branche == null)
         {
-            await _toastService.ShowToast("Erro na leitura de filial.");
+            await _toastService.ShowToastAsync("Erro na leitura de filial.");
             return;
         }
         else if (_company == null)
@@ -132,11 +132,12 @@ public partial class ConsumerSalePage : ContentPage
 
             if (_company == null)
             {
-                await _toastService.ShowToast("Erro na leitura de empresa.");
+                await _toastService.ShowToastAsync("Erro na leitura de empresa.");
                 return;
             }
         }
 
+        _x509Certificate2 = SefazHelpers.LoadCertificate(_company.CertificateId, _company.ClientId, _db);
 
         // ✅ Verifica se há notas fiscais pendentes de envio
         var invoiceCol = _db.GetCollection<Invoice>("invoice");
@@ -169,9 +170,9 @@ public partial class ConsumerSalePage : ContentPage
                     var sefaz = await EnviarNotaParaSefaz(pendente);
                     if (sefaz.Success)
 
-                        await _toastService.ShowToast("Nota enviada com sucesso.");
+                        await _toastService.ShowToastAsync("Nota enviada com sucesso.");
                     else
-                        await _toastService.ShowToast("Falha ao enviar nota.");
+                        await _toastService.ShowToastAsync("Falha ao enviar nota.");
                 }
             }
         }
@@ -187,7 +188,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
 
-    private async Task<(bool Success, string QrCode, bool TransportOk, string StatusCode)> EnviarNotaParaSefaz(Invoice invoice)
+    private async Task<(bool Success, string QrCode, bool TransportOk, string StatusCode , string msg)> EnviarNotaParaSefaz(Invoice invoice)
     {
         try
         {
@@ -213,15 +214,17 @@ public partial class ConsumerSalePage : ContentPage
             // Atribui os itens com taxas à invoice
             invoice.Items = items;
 
-            var xmlBuilder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company).Build();
+            
+
+            var xmlBuilder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company, _x509Certificate2).Build();
 
             if (xmlBuilder.Error != null)
             {
                 Console.WriteLine($"Erro ao gerar XML: {xmlBuilder.Error.Message}");
                 // Opcional: detalhar exceção interna
                 if (xmlBuilder.Error.InnerException != null)
-                    await _toastService.ShowToast(xmlBuilder.Error.InnerException.Message);
-                return (false, null, true, "9999");
+                    await _toastService.ShowToastAsync(xmlBuilder.Error.InnerException.Message);
+                return (false, null, true, "9999", xmlBuilder.Error.InnerException.Message);
             }
 
             var signedXml = xmlBuilder.Xml.InnerXml;
@@ -229,7 +232,7 @@ public partial class ConsumerSalePage : ContentPage
 
             var sefazService = new SefazService(_db, _company); // instanciado com seus parâmetros
 
-            var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice, _client.EnvironmentSefaz);
+            var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice, _client.EnvironmentSefaz, _x509Certificate2);
 
             if (result.Success)
             {
@@ -260,19 +263,19 @@ public partial class ConsumerSalePage : ContentPage
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
 
-                return (true, qrCode, result.TransportOk, result.StatusCode);
+                return (true, qrCode, result.TransportOk, result.StatusCode,"Sucesso");
 
             }
             else
             {
-                await _toastService.ShowToast(result.StatusMessage);
-                return (false, null, result.TransportOk, result.StatusCode);
+                await _toastService.ShowToastAsync(result.StatusMessage);
+                return (false, null, result.TransportOk, result.StatusCode, result.StatusMessage);
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Erro ao carregar a nota: {ex.Message}");
-            return (false, null, true, "999");
+            return (false, null, true, "999", ex.Message);
         }
     }
 
@@ -281,6 +284,7 @@ public partial class ConsumerSalePage : ContentPage
         var total = _items.Sum(i => i.Price * i.Quantity);
         lblTotal.Text = $"Total: R$ {total.ToString("N2", new CultureInfo("pt-BR"))}";
         ProductSuggestions.Clear();
+        entryProductCode.ItemsSource = null;
 
     }
 
@@ -324,7 +328,7 @@ public partial class ConsumerSalePage : ContentPage
                 entryProductCode.Focus();
             });
 
-            await _toastService.ShowToast("Produto não encontrado.");
+            await _toastService.ShowToastAsync("Produto não encontrado.");
             return;
         }
 
@@ -339,7 +343,7 @@ public partial class ConsumerSalePage : ContentPage
 
         if (price == null)
         {
-            await _toastService.ShowToast("Preço não encontrado.");
+            await _toastService.ShowToastAsync("Preço não encontrado.");
             return;
         }
 
@@ -402,8 +406,6 @@ public partial class ConsumerSalePage : ContentPage
        });
 
     }
-
-
 
 
     private void OnCancelItemClicked(object sender, EventArgs e)
@@ -500,7 +502,7 @@ public partial class ConsumerSalePage : ContentPage
     {
         if (_items.Count == 0)
         {
-            await _toastService.ShowToast("Não há itens na venda para finalizar");
+            await _toastService.ShowToastAsync("Não há itens na venda para finalizar");
             return;
         }
 
@@ -528,7 +530,7 @@ public partial class ConsumerSalePage : ContentPage
         var post = await NCFE.CreateAsync();
         if (!post.Sucess)
         {
-            await _toastService.ShowToast(NCFE.ErrorMessage);
+            await _toastService.ShowToastAsync(NCFE.ErrorMessage);
             return;
         }
 
@@ -545,7 +547,6 @@ public partial class ConsumerSalePage : ContentPage
             invCol.Update(post.Invoice);
         }
 
-
         // CALCULA IBPT AQUI, ANTES DE ASSINAR/ENVIAR
         var ibpt = TaxUtils.CalculateApproximateTaxes(post.Invoice, _db, assumeImported: false);
         post.Invoice.AdditionalInfo = TaxUtils.BuildIbptObservation(ibpt);
@@ -556,7 +557,7 @@ public partial class ConsumerSalePage : ContentPage
 
             if (!send.TransportOk)
             {
-                await _toastService.ShowToast("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
+                await _toastService.ShowToastAsync("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
                 await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
                 _items.Clear();
                 entryQuantity.Text = "1";
@@ -564,13 +565,13 @@ public partial class ConsumerSalePage : ContentPage
                 MainThread.BeginInvokeOnMainThread(() => entryCustomerCpf.Focus());
                 UpdateTotal();
 
-                await _toastService.ShowToast("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
+                await _toastService.ShowToastAsync("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
 
             }
             else
             {
                 NCFE.DeleteInvoiceCascade(post.Invoice.InvoiceId, allowAuthorizedDeletion: true);
-                await _toastService.ShowToast("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode);
+                await _toastService.ShowToastAsync("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode);
             }
 
             return; // <<< IMPORTANTE: não envia para retaguarda
@@ -583,7 +584,7 @@ public partial class ConsumerSalePage : ContentPage
             await printed;
             if (printed.IsFaulted)
             {
-                await _toastService.ShowToast("Erro ao imprimir o cupom.");
+                await _toastService.ShowToastAsync("Erro ao imprimir o cupom.");
             }
             else
             {
@@ -599,12 +600,12 @@ public partial class ConsumerSalePage : ContentPage
         if (!bo)
         {
             // Mostra mensagem amigável + log opcional com bo.RawBody
-            await _toastService.ShowToast($"Falha ao enviar para retaguarda");
+            await _toastService.ShowToastAsync($"Falha ao enviar para retaguarda");
             // opcional: Console.WriteLine(bo.RawBody);
         }
         else
         {
-            await _toastService.ShowToast("Retaguarda sincronizada.");
+            await _toastService.ShowToastAsync("Retaguarda sincronizada.");
             var invoiceCollection = _db.GetCollection<Invoice>("invoice");
             post.Invoice.Send = true;
             invoiceCollection.Update(post.Invoice);
@@ -624,7 +625,7 @@ public partial class ConsumerSalePage : ContentPage
 
         UpdateTotal();
 
-        await _toastService.ShowToast("Venda finalizada com sucesso.");
+        await _toastService.ShowToastAsync("Venda finalizada com sucesso.");
     }
     private void OnQuantityFocused(object sender, FocusEventArgs e)
     {
@@ -803,12 +804,12 @@ public partial class ConsumerSalePage : ContentPage
                 }
             }
 
-            await _toastService.ShowToast($"Envio concluído. Sucesso: {successCount}, Falhas: {failCount}.");
+            await _toastService.ShowToastAsync($"Envio concluído. Sucesso: {successCount}, Falhas: {failCount}.");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Erro ao checar/enviar notas pendentes: {ex}");
-            await _toastService.ShowToast("Erro ao verificar notas pendentes.");
+            await _toastService.ShowToastAsync("Erro ao verificar notas pendentes.");
         }
     }
 
@@ -840,20 +841,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
     enum Align { Left, Right, Center }
-
-    static void WriteColumnsSameLine(Stream s, int cols, params (string text, int width, Align align)[] cells)
-    {
-        // garante que a soma das larguras não ultrapasse COLS
-        int total = 0;
-        foreach (var c in cells) total += c.width;
-        if (total > cols) throw new ArgumentException("Soma das larguras > COLS");
-
-        var sb = new System.Text.StringBuilder(cols);
-        foreach (var (text, width, align) in cells)
-            sb.Append(FitCell(text, width, align));
-
-        Write(s, sb.ToString(), cols); // sem LF
-    }
+       
 
     static string FitCell(string text, int width, Align align)
     {
@@ -983,13 +971,7 @@ public partial class ConsumerSalePage : ContentPage
                 Writeln(ms, $"Protocolo de Autorização: {invoice.AuthorizationProtocol}", COLS);
             if (!string.IsNullOrWhiteSpace(dataAut))
                 Writeln(ms, $"Data de Autorização: {dataAut}", COLS);
-
-            //// ----- QR Code -----
-            //EscPos_Align(ms, 1);
-            //var qr = BuildQrCodeEscPos(qrCodeUrl);
-            //ms.Write(qr, 0, qr.Length);
-            //EscPos_Align(ms, 0);
-
+              
             // ----- QR como RASTER (compatível com seu emulador e com impressoras reais) -----
             EscPos_Align(ms, 1);
             var qrRaster = BuildQrRasterEscPosMaui(qrCodeUrl, sizePx: 256); // 256 ~ bom para 58/80mm
@@ -1018,7 +1000,7 @@ public partial class ConsumerSalePage : ContentPage
         }
         catch (Exception ex)
         {
-            await _toastService.ShowToast($"Falha ao gerar/enviar impressão: {ex.Message}");
+            await _toastService.ShowToastAsync($"Falha ao gerar/enviar impressão: {ex.Message}");
         }
     }
 
@@ -1295,7 +1277,7 @@ public partial class ConsumerSalePage : ContentPage
 
         if (string.IsNullOrWhiteSpace(cpf))
         {
-            await _toastService.ShowToast("Informe um CPF para cadastrar.");
+            await _toastService.ShowToastAsync("Informe um CPF para cadastrar.");
             return;
         }
 
@@ -1409,8 +1391,10 @@ public partial class ConsumerSalePage : ContentPage
 
         invoice.Items = items;
 
+        
+
         // Monta XML "normal" e converte para contingência (tpEmis=9)
-        var builder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company).Build();
+        var builder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company, _x509Certificate2).Build();
         if (builder.Error != null) throw builder.Error;
 
         var xmlDoc = builder.Xml; // XmlDocument assinado do seu builder
@@ -1439,7 +1423,7 @@ public partial class ConsumerSalePage : ContentPage
         // Imprime DANFE contingência
         await ImprimirCupomContingenciaAsync(invoice, qr);
 
-        await _toastService.ShowToast("NFC-e emitida em CONTINGÊNCIA. Enviaremos à SEFAZ quando a conexão voltar.");
+        await _toastService.ShowToastAsync("NFC-e emitida em CONTINGÊNCIA. Enviaremos à SEFAZ quando a conexão voltar.");
     }
 
 
@@ -1522,7 +1506,7 @@ public partial class ConsumerSalePage : ContentPage
         }
         catch (Exception ex)
         {
-            await _toastService.ShowToast($"Falha ao imprimir contingencia: {ex.Message}");
+            await _toastService.ShowToastAsync($"Falha ao imprimir contingencia: {ex.Message}");
         }
     }
 
@@ -1555,7 +1539,9 @@ public partial class ConsumerSalePage : ContentPage
                 var xmlAssinado = Encoding.UTF8.GetString(Convert.FromBase64String(inv.AuthorizedXml));
                 var sefazService = new SefazService(_db, _company);
 
-                var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv, _client.EnvironmentSefaz);
+                
+
+                var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv, _client.EnvironmentSefaz, _x509Certificate2);
                 if (result.Success)
                 {
                     // Atualiza dados de autorização
@@ -1577,10 +1563,10 @@ public partial class ConsumerSalePage : ContentPage
             catch { fail++; }
         }
 
-        await _toastService.ShowToast($"Contingencia -> SEFAZ concluido. Sucesso: {ok}, Falhas: {fail}.");
+        await _toastService.ShowToastAsync($"Contingencia -> SEFAZ concluido. Sucesso: {ok}, Falhas: {fail}.");
     }
 
-    private const int SuggestLimit = 10;
+    private const int SuggestLimit = 7;
     private int _querySeq = 0; // evita race conditions entre buscas
 
     private async Task SearchProductsAsync(string term)
@@ -1597,6 +1583,7 @@ public partial class ConsumerSalePage : ContentPage
         if (string.IsNullOrWhiteSpace(term))
         {
             ProductSuggestions.Clear();
+            entryProductCode.ItemsSource = null;
             return;
         }
 
@@ -1625,8 +1612,9 @@ public partial class ConsumerSalePage : ContentPage
 
             ProductSuggestions.Clear();
             foreach (var p in results)
-                ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name, Price = p.Price });
-            entryProductCode.ItemsSource = ProductSuggestions;
+                ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name, Price = p.Price , PriceUnit = p.PriceUnit });
+            entryProductCode.ItemsSource = null;
+            entryProductCode.ItemsSource =  ProductSuggestions;
         }
         catch (TaskCanceledException) { /* digitação contínua → esperado */ }
         catch (OperationCanceledException) { /* idem */ }
@@ -1664,6 +1652,7 @@ public partial class ConsumerSalePage : ContentPage
             // opcional: marcar seleção visual
             ItemsListView.SelectedItem = item;
 
+
             // faça sua ação de “clique” aqui:
             // ex: abrir edição de quantidade, remover, etc.
             // await EditarItemAsync(item);
@@ -1690,8 +1679,15 @@ public partial class ConsumerSalePage : ContentPage
 
             _lastChosen = sel;
 
-
-            // … sua lógica (ex: adicionar na lista) …
+            if (OperatingSystem.IsAndroid())
+            {
+                // no Android, o Unfocused vem antes do SuggestionChosen
+                // então precisamos navegar “depois” para evitar conflitos
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    OnProductCodeEntered(sender, e);
+                });
+            }
         }
     }
 

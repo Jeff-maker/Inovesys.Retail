@@ -10,6 +10,7 @@
                 .UseSharedMauiApp();
 
             return builder.Build();
+
         }
     }
 }

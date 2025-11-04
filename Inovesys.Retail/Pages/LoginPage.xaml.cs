@@ -48,7 +48,7 @@ public partial class LoginPage : ContentPage
 
         var loginData = new
         {
-            User = email,
+            User = email.ToLower(),
             Password = senha,
             ClientId = clientId
         };
@@ -97,7 +97,7 @@ public partial class LoginPage : ContentPage
                 {
                     SaveAuth(result, email ?? string.Empty, selectClient);
                     //await DisplayAlert("Sucesso", "Login realizado com sucesso!", "OK");
-                    await _toast.ShowToast("Login realizado com sucesso!");
+                    await _toast.ShowToastAsync("Login realizado com sucesso!");
                     await Navigation.PopAsync();
                 }
                 

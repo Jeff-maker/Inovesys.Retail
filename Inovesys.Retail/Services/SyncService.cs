@@ -76,6 +76,7 @@ public class SyncService
             {
                 PropertyNameCaseInsensitive = true
             }) ?? new ODataResponse<T>();
+            var json = await resp.Content.ReadAsStringAsync();
 
             var items = odata.Value ?? new List<T>();
 

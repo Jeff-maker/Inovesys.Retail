@@ -1,11 +1,6 @@
 ﻿using Inovesys.Retail.Entities;
 using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace Inovesys.Retail.Models
 {
@@ -14,12 +9,14 @@ namespace Inovesys.Retail.Models
         [JsonPropertyName("@odata.context")]
         public string Context { get; set; } = null!;
 
+
+        [JsonPropertyName("value")] 
         public List<T> Value { get; set; } = new();
 
         [JsonPropertyName("@odata.count")]
         public int? Count { get; set; }
 
-        [System.Text.Json.Serialization.JsonPropertyName("@odata.nextLink")]
+        [JsonPropertyName("@odata.nextLink")]
         public string NextLink { get; set; } = null;
 
 

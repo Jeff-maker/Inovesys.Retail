@@ -8,7 +8,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UseMaui>true</UseMaui>
-
+   
 
     <!-- Nome do pacote Android -->
     <ApplicationId>br.com.inovesys.retail</ApplicationId>
@@ -16,12 +16,6 @@
     <ApplicationTitle>Inovesys Retail</ApplicationTitle>
 
   </PropertyGroup>
-
-
-
-  
-  
-
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RunAOTCompilation>false</RunAOTCompilation>
@@ -30,6 +24,15 @@
     <AndroidSupportedAbis>arm64-v8a</AndroidSupportedAbis>
     <!-- opcional: gera 1 APK menor -->
   </PropertyGroup>
+
+
+
+  
+  
+
+  <ItemGroup>
+    <AndroidResource Include="Platforms\Android\Resources\xml\network_security_config.xml" />
+  </ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Maui" Version="12.1.0" />
@@ -40,6 +43,10 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\Inovesys.Retail\Inovesys.Retail.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Services\" />
 	</ItemGroup>
 
 </Project>

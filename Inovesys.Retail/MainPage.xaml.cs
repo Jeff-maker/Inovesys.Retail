@@ -1,18 +1,43 @@
 ﻿using Inovesys.Retail.Entities;
 using Inovesys.Retail.Pages;
 using Inovesys.Retail.Services;
+using System.Reflection;
 
 namespace Inovesys.Retail
 {
+    public enum SyncMode
+    {
+        Partial, // usa LastChange (delta)
+        Full     // ignora LastChange (força full)
+    }
+
     public partial class MainPage : ContentPage
     {
         private readonly ToastService _toast;
         private readonly SyncService _syncService;
-
-        private LiteDbService _db;
+        private readonly LiteDbService _db;
 
         // roda auto-sync só uma vez por sessão
         private bool _didAutoSync;
+
+        // Mapa único de todas as entidades de sync
+        // (Type, endpoint plural, endpoint singular)
+        private static readonly (Type Type, string Plural, string Singular)[] _syncMap =
+        {
+            (typeof(Client),                "clients",               "client"),
+            (typeof(Company),               "companies",             "companie"),
+            (typeof(Branche),               "branchies",             "branche"),
+            (typeof(Certificate),           "certificates",          "certificate"),
+            (typeof(CfopDetermination),     "cfop-determinations",   "cfopdetermination"),
+            (typeof(PisDetermination99),    "pis-determinations",    "pisdetermination"),
+            (typeof(CofinsDetermination99), "cofins-determinations", "cofinsdetermination"),
+            (typeof(IcmsStDetermination),   "icms-st-determinations","icmsstdetermination"),
+            (typeof(SalesChannel),          "saleschannels",         "saleschannel"),
+            (typeof(Material),              "materials",             "material"),
+            (typeof(MaterialPrice),         "material-prices",       "materialprice"),
+            (typeof(State),                 "states",                "state"),
+            (typeof(Ncm),                   "ncms",                  "ncm"),
+        };
 
         public MainPage(SyncService syncService, ToastService toast, LiteDbService liteDatabase)
         {
@@ -22,81 +47,37 @@ namespace Inovesys.Retail
             _db = liteDatabase;
         }
 
+        // --- Botão "Sincronizar" (parcial)
         private async void OnSyncClicked(object sender, EventArgs e)
         {
-            try
-            {
-                await DisplayAlert("Sincronização", "Dados sincronizados com sucesso!", "OK");
-            }
-            catch (Exception ex)
-            {
-                await DisplayAlert("Erro", $"Erro ao sincronizar: {ex.Message}", "Fechar");
-            }
+            await RunSyncAsync(SyncMode.Partial, showToastOnSuccess: true);
         }
 
-
-        // >>> AUTO-SYNC após a tela aparecer
+        // --- Auto-sync ao aparecer (parcial e silencioso)
         protected override async void OnAppearing()
         {
             base.OnAppearing();
 
-            if (_didAutoSync) return;      // evita rodar toda vez que voltar pra MainPage
+            if (_didAutoSync) return;
             _didAutoSync = true;
 
-
-            await SyncAllAsync(showToastOnSuccess: false); // silencioso (ou true se quiser)
+            await RunSyncAsync(SyncMode.Partial, showToastOnSuccess: false);
         }
 
-
-
-        // ============ Núcleo da sincronização ============
-        private async Task SyncAllAsync(bool showToastOnSuccess)
+        // --- Botão "Sincronização Completa"
+        private async void OnSyncAllClicked(object sender, EventArgs e)
         {
-
-            // ClientId atual (se aplicável às entidades locais)
-            var user = _db.GetCollection<UserConfig>("user_config").FindById("CURRENT");
-
-            if(user == null || string.IsNullOrEmpty(user.Token))
-            {
-                // Usuário não logado, não faz sync
-                return;
-            }
-
-
             if (IsBusy) return;
 
-            try
-            {
-                IsBusy = true;
+            bool confirmar = await DisplayAlert(
+                "Sincronização completa",
+                "Deseja realmente executar a sincronização completa? Este processo pode demorar alguns minutos.",
+                "Sim", "Não");
 
-                await _syncService.SyncEntitiesAsync<Client>("clients", "clients", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<Company>("companies", "companie", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<Branche>("branchies", "branche", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<Certificate>("certificates", "certificate", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<CfopDetermination>("cfop-determinations", "cfopdetermination", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<PisDetermination99>("pis-determinations", "pisdetermination", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<CofinsDetermination99>("cofins-determinations", "cofinsdetermination", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<IcmsStDetermination>("icms-st-determinations", "icmsstdetermination", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<SalesChannel>("saleschannels", "saleschannel", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<Material>("materials", "material", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<MaterialPrice>("material-prices", "materialprice", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<State>("states", "state", ignoreLastChange: false);
-                await _syncService.SyncEntitiesAsync<Ncm>("ncms", "ncm", ignoreLastChange: false);
+            if (!confirmar) return;
 
-                if (showToastOnSuccess)
-                    await _toast.ShowToast("Dados sincronizados com sucesso!");
-            }
-            catch (Exception ex)
-            {
-                // Mostra erro sempre que falhar (tanto no auto quanto no botão)
-                await DisplayAlert("Erro na sincronização", ex.Message, "OK");
-            }
-            finally
-            {
-                IsBusy = false;
-            }
+            await RunSyncAsync(SyncMode.Full, showToastOnSuccess: true);
         }
-
 
         private async void OnSettingsClicked(object sender, EventArgs e)
         {
@@ -108,59 +89,59 @@ namespace Inovesys.Retail
             await Shell.Current.GoToAsync(nameof(LoginPage));
         }
 
-
-        private async void OnSyncAllClicked(object sender, EventArgs e)
+        private async void OnConsumerSaleClicked(object sender, EventArgs e)
         {
-            if (IsBusy) return;
+            await Shell.Current.GoToAsync(nameof(ConsumerSalePage));
+        }
 
-            // Confirmação antes de iniciar
-            bool confirmar = await DisplayAlert(
-                "Sincronização completa",
-                "Deseja realmente executar a sincronização completa? Este processo pode demorar alguns minutos.",
-                "Sim", "Não");
-
-            if (!confirmar) return;
-
+        // ================= Núcleo unificado =================
+        private async Task RunSyncAsync(SyncMode mode, bool showToastOnSuccess)
+        {
             try
             {
+                // 1) Checa login/token
+                var user = _db.GetCollection<UserConfig>("user_config").FindById("CURRENT");
+                if (user == null || string.IsNullOrEmpty(user.Token))
+                    return; // não logado → não sincroniza
+
+                if (IsBusy) return;
                 IsBusy = true;
 
-                await _syncService.SyncEntitiesAsync<Client>("clients", "clients", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<Company>("companies", "companie", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<Branche>("branchies", "branche", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<Certificate>("certificates", "certificate", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<CfopDetermination>("cfop-determinations", "cfopdetermination", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<PisDetermination99>("pis-determinations", "pisdetermination", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<CofinsDetermination99>("cofins-determinations", "cofinsdetermination", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<IcmsStDetermination>("icms-st-determinations", "icmsstdetermination", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<SalesChannel>("saleschannels", "saleschannel", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<Material>("materials", "material", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<MaterialPrice>("material-prices", "materialprice", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<State>("states", "state", ignoreLastChange: true);
-                await _syncService.SyncEntitiesAsync<Ncm>("ncms", "ncm", ignoreLastChange: true);
+                bool ignoreLastChange = (mode == SyncMode.Full);
 
-                
+                // 2) Itera o mapa e chama o método genérico via reflection
+                foreach (var (type, plural, singular) in _syncMap)
+                {
+                    await InvokeSyncEntitiesAsync(type, plural, singular, ignoreLastChange);
+                }
+
+                if (showToastOnSuccess)
+                    await _toast.ShowToastAsync("Dados sincronizados com sucesso!");
             }
             catch (Exception ex)
             {
-                await DisplayAlert("Erro", ex.Message, "OK");
+                await DisplayAlert("Erro na sincronização", ex.Message, "OK");
             }
             finally
             {
                 IsBusy = false;
-                await _toast.ShowToast("Sincronização concluída!");
             }
         }
 
-
-
-        private async void OnConsumerSaleClicked(object sender, EventArgs e)
+        // Chama _syncService.SyncEntitiesAsync<T>(plural, singular, ignoreLastChange) dinamicamente
+        private Task InvokeSyncEntitiesAsync(Type entityType, string plural, string singular, bool ignoreLastChange)
         {
-            await Shell.Current.GoToAsync(nameof(ConsumerSalePage)); // Se tiver essa página
+            // Obtém o método genérico
+            var method = typeof(SyncService)
+                .GetMethod("SyncEntitiesAsync", BindingFlags.Public | BindingFlags.Instance);
+
+            if (method == null)
+                throw new MissingMethodException("SyncService.SyncEntitiesAsync<T> não encontrado.");
+
+            var generic = method.MakeGenericMethod(entityType);
+            var taskObj = generic.Invoke(_syncService, new object[] { plural, singular, ignoreLastChange });
+
+            return taskObj is Task t ? t : Task.CompletedTask;
         }
-
-
-
     }
-
 }

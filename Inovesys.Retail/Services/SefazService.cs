@@ -1,9 +1,10 @@
-﻿using Inovesys.Retail.Entities;
-using Inovesys.Retail;
+﻿using Inovesys.Retail;
+using Inovesys.Retail.Entities;
+using Inovesys.Retail.Services;
 using System.Net.Http.Headers;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
-using Inovesys.Retail.Services;
 
 public class SefazService
 {
@@ -24,11 +25,11 @@ public class SefazService
      string ProtocolXml,
      string ProcXml,
      Invoice UpdatedInvoice)>
-            SendToSefazAsync(int id, string signedXml, Invoice invoice, string EnvironmentSefaz)
+            SendToSefazAsync(int id, string signedXml, Invoice invoice, string EnvironmentSefaz, X509Certificate2 cert )
     {
         try
         {
-            var cert = SefazHelpers.LoadCertificate(_company.CertificateId, _company.ClientId, _db);
+            
             if (cert == null)
                 return (false, false, "CERT", "Certificado digital não encontrado ou inválido", null, null, null);
 
@@ -45,32 +46,26 @@ public class SefazService
                 return (false, false, "XML1", $"XML inválido: {ex.Message}", null, null, null);
             }
 
-            // HTTP + certificado
-            var handler = new HttpClientHandler
-            {
-                ClientCertificateOptions = ClientCertificateOption.Manual,
-                SslProtocols = System.Security.Authentication.SslProtocols.Tls12
-            };
-            handler.ClientCertificates.Add(cert);
+            //// HTTP + certificado
+            //var handler = new HttpClientHandler
+            //{
+            //    ClientCertificateOptions = ClientCertificateOption.Manual,
+            //    SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13
+            //};
+            //handler.ClientCertificates.Add(cert);
 
 
-            string sefazBaseUrl;
+            // Carrega certificado e cria HttpClient com ele
+            var client = SefazHttpPlatform.CreateClient(cert);
 
-            // Ambiente: 1 = Produção, 2 = Homologação (padrão das NF-e / NFC-e)
-            if (EnvironmentSefaz == "1")
-            {
-                sefazBaseUrl = "https://www.nfce.fazenda.sp.gov.br"; // produção
-            }
-            else
-            {
-                sefazBaseUrl = "https://homologacao.nfce.fazenda.sp.gov.br"; // homologação
-            }
+            // Define ambiente SEFAZ
+            string sefazBaseUrl = EnvironmentSefaz == "1"
+                ? "https://www.nfce.fazenda.sp.gov.br"           // Produção
+                : "https://homologacao.nfce.fazenda.sp.gov.br";  // Homologação
 
-            using var client = new HttpClient(handler)
-            {
-                BaseAddress = new Uri(sefazBaseUrl),
-                Timeout = TimeSpan.FromSeconds(60)
-            };
+            // Configura a URL base e timeout
+            client.BaseAddress = new Uri(sefazBaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(60);
 
             var soapEnvelope = BuildSoapEnvelope(signedXml, "1", "4.00");
             var requestContent = new StringContent(soapEnvelope, Encoding.UTF8, "application/soap+xml");
