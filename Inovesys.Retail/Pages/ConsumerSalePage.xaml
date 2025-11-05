@@ -16,6 +16,15 @@
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
 
+            <MenuFlyoutItem x:Name="miEditQu"
+           Text="Editar Quantidade(F3)"
+           Clicked="OnEditQuant">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F3" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+
+
             <MenuFlyoutItem x:Name="miFinalizar"
                         Text="Finalizar venda (F6)"
                         Clicked="OnFinalizeSaleClicked">
@@ -32,14 +41,7 @@
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
 
-            <MenuFlyoutItem x:Name="miEditQu"
-                      Text="Editar Quantidade(F3)"
-                      Clicked="OnEditQuant">
-                                    <MenuFlyoutItem.KeyboardAccelerators>
-                    <KeyboardAccelerator Key="F3" />
-                </MenuFlyoutItem.KeyboardAccelerators>
-            </MenuFlyoutItem>
-
+           
         </MenuBarItem>
     </ContentPage.MenuBarItems>
 
@@ -90,7 +92,7 @@
                        Unfocused="OnCpfUnfocused"
                        Completed="OnCpfCompleted"
                        HorizontalOptions="Center"
-                        MaximumWidthRequest="300"/>
+                       MaximumWidthRequest="300"/>
 
         <!--<Button Grid.Column="1"
                     Text="CADASTRO"
@@ -108,7 +110,6 @@
 
             <zoft:AutoCompleteEntry
                     Grid.Column="0"
-                    
                     x:Name="entryProductCode"
                     Placeholder="Código do produto ou descrição"
                     Text="{Binding ProductText, Mode=TwoWay}"
@@ -147,7 +148,8 @@
                     ItemsLayout="VerticalList"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
-                    VerticalScrollBarVisibility="Always">
+                    VerticalScrollBarVisibility="Always"
+                    ItemsUpdatingScrollMode="KeepLastItemInView">
 
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="models:ConsumerSaleItem">
@@ -155,15 +157,22 @@
                                  BackgroundColor="#007bff" 
                                  Padding="4" Margin="2">
 
-                            <Grid Padding="8" ColumnSpacing="8" ColumnDefinitions="2*,*,*,*"  RowSpacing="10" VerticalOptions="Center">
-                                <Label TextColor="White" Grid.Column="0" Text="{Binding Description}" FontSize="12" VerticalOptions="Center"/>
+                            <Grid Padding="8" ColumnSpacing="8" ColumnDefinitions="*,3*,*,*,*"  RowSpacing="10" VerticalOptions="Center">
+                                <Label 
+                                    
+                                        TextColor="White"
+                                        Grid.Column="0"
+                                        FontSize="12"
+                                        VerticalOptions="Center"
+                                        Text="{Binding Id, StringFormat='{}{0:D4}'}" />
+                                <Label TextColor="White" Grid.Column="1" Text="{Binding Description}" FontSize="12" VerticalOptions="Center"/>
                                 <!--<Label TextColor="White" Grid.Column="1" Text="{Binding Quantity, StringFormat='{0:N0}'}" FontSize="16" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
                                 <!-- Quantidade editável -->
 
-                                <Label TextColor="White" Grid.Column="1" Text="{Binding Price, StringFormat='R$ {0:F2}'}" FontSize="12" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+                                <Label TextColor="White" Grid.Column="2" Text="{Binding Price, StringFormat='R$ {0:F2}'}" FontSize="12" HorizontalTextAlignment="End" VerticalOptions="Center"/>
                                 <Entry
                                                 AutomationId = "QtyEntry"            
-                                                Grid.Column="2"
+                                                Grid.Column="3"
                                                 Text="{Binding Quantity, Mode=TwoWay, StringFormat='{0:N0}'}"
                                                 FontSize="12"
                                                 HeightRequest="28"
@@ -177,7 +186,7 @@
                                                 HorizontalOptions="Center"
                                     Completed="Entry_Completed"/>
 
-                                <Label TextColor="White" Grid.Column="3" Text="{Binding Total, StringFormat='R$ {0:F2}'}" FontSize="12" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+                                <Label TextColor="White" Grid.Column="4" Text="{Binding Total, StringFormat='R$ {0:F2}'}" FontSize="12" HorizontalTextAlignment="End" VerticalOptions="Center"/>
                             </Grid>
                         </Border>
                     </DataTemplate>

@@ -50,6 +50,12 @@ public partial class ConsumerSalePage : ContentPage
 
     private bool _handlingUnfocus = false;
 
+    // Terminadores comuns de scanner/simulador
+    private static readonly char[] ScanTerminators = new[] { '\r', '\n', '\t', ';' };
+
+    // Evita recursão quando setamos entryProductCode.Text programaticamente
+    private bool _handlingScanEnd = false;
+
     public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor, ProductRepositoryLiteDb products)
     {
         InitializeComponent();
@@ -83,7 +89,42 @@ public partial class ConsumerSalePage : ContentPage
         // comando (genérico string!)
         var searchCmd = new Command<string>(async term =>
         {
+            if (_handlingScanEnd) return;
+
+            term ??= string.Empty;
             System.Diagnostics.Debug.WriteLine($"🔎 Digitou: {term}");
+
+            // Se terminou com CR/LF/TAB/; → trata como Enter do scanner
+            if (term.Length > 0 && ScanTerminators.Contains(term[^1]))
+            {
+                _handlingScanEnd = true;
+
+                try
+                {
+                    // Remove todos os terminadores de cauda (ex.: "\r\n")
+                    var cleaned = term.TrimEnd(ScanTerminators);
+
+                    // Atualiza o Entry sem disparar busca novamente
+                    _suppressTextChanged = true;
+                    entryProductCode.Text = cleaned;
+                    _suppressTextChanged = false;
+
+                    // (opcional) limpa sugestões para não “brigar” com o fluxo de inclusão
+                    ProductSuggestions.Clear();
+                    entryProductCode.ItemsSource = null;
+
+                    // Dispara o mesmo handler do Enter
+                    OnProductCodeEntered(entryProductCode, EventArgs.Empty);
+                }
+                finally
+                {
+                    _handlingScanEnd = false;
+                }
+
+                return; // não faz busca
+            }
+
+            // Fluxo normal: atualizar sugestões
             await SearchProductsAsync(term);
         });
 
@@ -213,9 +254,7 @@ public partial class ConsumerSalePage : ContentPage
 
             // Atribui os itens com taxas à invoice
             invoice.Items = items;
-
             
-
             var xmlBuilder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company, _x509Certificate2).Build();
 
             if (xmlBuilder.Error != null)
@@ -374,39 +413,46 @@ public partial class ConsumerSalePage : ContentPage
         });
         entryQuantity.Text = "1";
         UpdateTotal();
-        FocusLastItemAsync();
+        //await FocusLastItemAsync();
     }
 
-
-    private void FocusLastItemAsync()
+    private Task WaitScrollAsync(int targetIndex, int timeoutMs = 1000)
     {
-
-        if (ItemsListView.ItemsSource is not IEnumerable<ConsumerSaleItem> src)
-            return;
-
-        var last = src.LastOrDefault();
-        if (last == null) return;
-
-        ItemsListView.SelectedItem = last;
-
-        // 🕐 Espera até que o item realmente apareça na tela (timeout de 1,5s)
+        var tcs = new TaskCompletionSource();
+        EventHandler<ItemsViewScrolledEventArgs> handler = null!;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (sw.ElapsedMilliseconds < 1500)
+
+        handler = (s, e) =>
         {
-            if (TryFocusQtyEntry(last))
-                return;
+            if (e.LastVisibleItemIndex >= targetIndex || sw.ElapsedMilliseconds > timeoutMs)
+            {
+                ItemsListView.Scrolled -= handler;
+                tcs.TrySetResult();
+            }
+        };
 
-            Task.Delay(50); // tenta de novo a cada 50ms
-        }
-
-        // Se ainda não renderizou, tenta um foco forçado depois
-        MainThread.InvokeOnMainThreadAsync(() =>
-       {
-           ItemsListView.ScrollTo(last, position: ScrollToPosition.End, animate: false);
-       });
-
+        ItemsListView.Scrolled += handler;
+        return tcs.Task;
     }
 
+    private async Task FocusLastItemAsync()
+    {
+        if (_items.Count == 0) return;
+        var lastIndex = _items.Count - 1;
+        var last = _items[lastIndex];
+
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            ItemsListView.SelectedItem = last;
+            ItemsListView.ScrollTo(lastIndex, position: ScrollToPosition.End, animate: true);
+            await WaitScrollAsync(lastIndex, 600);
+            // reforço sem animação (Android costuma precisar)
+            ItemsListView.ScrollTo(lastIndex, position: ScrollToPosition.End, animate: false);
+            await WaitScrollAsync(lastIndex, 400);
+        });
+
+        await Task.Delay(120);
+    }
 
     private void OnCancelItemClicked(object sender, EventArgs e)
     {
@@ -1630,20 +1676,20 @@ public partial class ConsumerSalePage : ContentPage
 
     private void OnProductCodeUnfocused(object sender, FocusEventArgs e)
     {
-        if (_lastChosen != null)
-        {
-            // limpa sugestão destacada
+        //if (_lastChosen != null)
+        //{
+        //    // limpa sugestão destacada
 
-            var z = sender as zoft.MauiExtensions.Controls.AutoCompleteEntry;
-            if (z.SelectedSuggestion == null) return;
+        //    var z = sender as zoft.MauiExtensions.Controls.AutoCompleteEntry;
+        //    if (z.SelectedSuggestion == null) return;
 
-            if (z.SelectedSuggestion == _lastChosen)
-            {
-                //entryProductCode.Text = _lastChosen.Id;
-                OnProductCodeEntered(sender, e);
-            }
-            _lastChosen = null;
-        }
+        //    if (z.SelectedSuggestion == _lastChosen)
+        //    {
+        //        //entryProductCode.Text = _lastChosen.Id;
+        //        OnProductCodeEntered(sender, e);
+        //    }
+        //    _lastChosen = null;
+        //}
     }
     private void OnItemTapped(object sender, TappedEventArgs e)
     {

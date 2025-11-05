@@ -17,15 +17,14 @@ public class SefazService
         _company = company;
     }
 
-    public async Task<(
-     bool Success,            // autorizado (cStat 100/150)
-     bool TransportOk,        // comunicação OK com SEFAZ
-     string StatusCode,       // cStat (ex.: "100","204","539", etc.)
-     string StatusMessage,    // xMotivo
-     string ProtocolXml,
-     string ProcXml,
-     Invoice UpdatedInvoice)>
-            SendToSefazAsync(int id, string signedXml, Invoice invoice, string EnvironmentSefaz, X509Certificate2 cert )
+    public async Task<(  bool Success,            // autorizado (cStat 100/150)
+                         bool TransportOk,        // comunicação OK com SEFAZ
+                         string StatusCode,       // cStat (ex.: "100","204","539", etc.)
+                         string StatusMessage,    // xMotivo
+                         string ProtocolXml,
+                         string ProcXml,
+                         Invoice UpdatedInvoice)>
+    SendToSefazAsync(int id, string signedXml, Invoice invoice, string EnvironmentSefaz, X509Certificate2 cert )
     {
         try
         {
