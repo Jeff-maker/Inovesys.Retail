@@ -20,21 +20,14 @@
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RunAOTCompilation>false</RunAOTCompilation>
     <!-- DESLIGA O AOT de fato -->
-    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <AndroidLinkMode>None</AndroidLinkMode>
     <AndroidSupportedAbis>arm64-v8a</AndroidSupportedAbis>
     <!-- opcional: gera 1 APK menor -->
   </PropertyGroup>
 
 
 
-  
-  
-
   <ItemGroup>
-    <AndroidResource Include="Platforms\Android\Resources\xml\network_security_config.xml" />
-  </ItemGroup>
-
-	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Maui" Version="12.1.0" />
 		<PackageReference Include="LiteDB" Version="5.0.21" />
 		<PackageReference Include="Microsoft.Maui.Controls" Version="9.0.80" />

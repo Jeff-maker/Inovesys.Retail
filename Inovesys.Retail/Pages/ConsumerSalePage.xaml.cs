@@ -544,134 +544,179 @@ public partial class ConsumerSalePage : ContentPage
         }
     }
 
+    private bool _isFinalizingSale;
+
     private async void OnFinalizeSaleClicked(object sender, EventArgs e)
     {
-        if (_items.Count == 0)
+
+        if (_isFinalizingSale)
+            return; // já está em execução
+
+        _isFinalizingSale = true;
+
+
+
+        if (sender is Button btn)
         {
-            await _toastService.ShowToastAsync("Não há itens na venda para finalizar");
-            return;
+            // animação de escala para dar resposta tátil
+            await btn.ScaleTo(0.95, 80);
+            await btn.ScaleTo(1.0, 80);
+
+            // mostra carregando
+            btn.Text = "Finalizando...";
+            btn.IsEnabled = false;
         }
 
-        var body = new InvoicePostDto
+        try
         {
-            CompanyId = _branche.CompanyId,
-            BrancheId = _branche.Id,
-            InvoiceTypeId = "01",
-            Serie = userConfig.SeriePDV,
-            InvoiceItems = _items.Select((item, index) => new InvoiceItemPostDto
+
+            if (_items.Count == 0)
             {
-                Id = (item.Id),
-                MaterialId = (item.MaterialId),
-                MaterialName = (item.Description),
-                Quantity = item.Quantity,
-                UnitPrice = item.Price,
-                TotalAmount = item.Total,
-                DiscountAmount = 0,
-                UnitId = "UN",
-                NCM = item.NCM,
-            }).ToList()
-        };
+                await _toastService.ShowToastAsync("Não há itens na venda para finalizar");
+                return;
+            }
 
-        var NCFE = new InvoiceService(_db, body, branche: _branche);
-        var post = await NCFE.CreateAsync();
-        if (!post.Sucess)
-        {
-            await _toastService.ShowToastAsync(NCFE.ErrorMessage);
-            return;
-        }
-
-        // CPF no XML: se o campo estiver preenchido e válido, grava no Invoice
-        var cpfDigits = OnlyDigits(entryCustomerCpf.Text?.Trim() ?? "");
-        if (cpfDigits.Length == 11 && IsValidCpf(cpfDigits))
-        {
-            post.Invoice.Customer ??= new Customer();
-            post.Invoice.Customer.Document = cpfDigits;            // usado pelo NFeXmlBuilder para <dest><CPF>
-            if (string.IsNullOrWhiteSpace(post.Invoice.Customer.Name))
-                post.Invoice.Customer.Name = "CONSUMIDOR";
-            // persiste no LiteDB antes da montagem/assinatura, por segurança
-            var invCol = _db.GetCollection<Invoice>("invoice");
-            invCol.Update(post.Invoice);
-        }
-
-        // CALCULA IBPT AQUI, ANTES DE ASSINAR/ENVIAR
-        var ibpt = TaxUtils.CalculateApproximateTaxes(post.Invoice, _db, assumeImported: false);
-        post.Invoice.AdditionalInfo = TaxUtils.BuildIbptObservation(ibpt);
-
-        var send = await EnviarNotaParaSefaz(invoice: post.Invoice);
-        if (!send.Success)
-        {
-
-            if (!send.TransportOk)
+            var body = new InvoicePostDto
             {
-                await _toastService.ShowToastAsync("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
-                await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
-                _items.Clear();
-                entryQuantity.Text = "1";
-                entryCustomerCpf.Text = string.Empty;
-                MainThread.BeginInvokeOnMainThread(() => entryCustomerCpf.Focus());
-                UpdateTotal();
+                CompanyId = _branche.CompanyId,
+                BrancheId = _branche.Id,
+                InvoiceTypeId = "01",
+                Serie = userConfig.SeriePDV,
+                InvoiceItems = _items.Select((item, index) => new InvoiceItemPostDto
+                {
+                    Id = (item.Id),
+                    MaterialId = (item.MaterialId),
+                    MaterialName = (item.Description),
+                    Quantity = item.Quantity,
+                    UnitPrice = item.Price,
+                    TotalAmount = item.Total,
+                    DiscountAmount = 0,
+                    UnitId = "UN",
+                    NCM = item.NCM,
+                }).ToList()
+            };
 
-                await _toastService.ShowToastAsync("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
+            var NCFE = new InvoiceService(_db, body, branche: _branche);
+            var post = await NCFE.CreateAsync();
+            if (!post.Sucess)
+            {
+                await _toastService.ShowToastAsync(NCFE.ErrorMessage);
+                return;
+            }
+
+            // CPF no XML: se o campo estiver preenchido e válido, grava no Invoice
+            var cpfDigits = OnlyDigits(entryCustomerCpf.Text?.Trim() ?? "");
+            if (cpfDigits.Length == 11 && IsValidCpf(cpfDigits))
+            {
+                post.Invoice.Customer ??= new Customer();
+                post.Invoice.Customer.Document = cpfDigits;            // usado pelo NFeXmlBuilder para <dest><CPF>
+                if (string.IsNullOrWhiteSpace(post.Invoice.Customer.Name))
+                    post.Invoice.Customer.Name = "CONSUMIDOR";
+                // persiste no LiteDB antes da montagem/assinatura, por segurança
+                var invCol = _db.GetCollection<Invoice>("invoice");
+                invCol.Update(post.Invoice);
+            }
+
+            // CALCULA IBPT AQUI, ANTES DE ASSINAR/ENVIAR
+            var ibpt = TaxUtils.CalculateApproximateTaxes(post.Invoice, _db, assumeImported: false);
+            post.Invoice.AdditionalInfo = TaxUtils.BuildIbptObservation(ibpt);
+
+            var send = await EnviarNotaParaSefaz(invoice: post.Invoice);
+            if (!send.Success)
+            {
+
+                if (!send.TransportOk)
+                {
+                    await _toastService.ShowToastAsync("Erro ao enviar nota fiscal para SEFAZ. Emitindo em CONTINGÊNCIA...");
+                    await EmitirEmContingenciaAsync(post.Invoice, motivoFalha: "Falha de comunicação com a SEFAZ", qrCodeUrl: send.QrCode);
+                    _items.Clear();
+                    entryQuantity.Text = "1";
+                    entryCustomerCpf.Text = string.Empty;
+                    MainThread.BeginInvokeOnMainThread(() => entryCustomerCpf.Focus());
+                    UpdateTotal();
+
+                    await _toastService.ShowToastAsync("Venda finalizada (contingência). Enviaremos à SEFAZ quando voltar.");
+
+                }
+                else
+                {
+                    NCFE.DeleteInvoiceCascade(post.Invoice.InvoiceId, allowAuthorizedDeletion: true);
+                    await _toastService.ShowToastAsync("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode);
+                }
+
+                return; // <<< IMPORTANTE: não envia para retaguarda
 
             }
             else
             {
-                NCFE.DeleteInvoiceCascade(post.Invoice.InvoiceId, allowAuthorizedDeletion: true);
-                await _toastService.ShowToastAsync("SEFAZ rejeitou a nota fiscal com erro :" + send.StatusCode);
+
+                Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+                await printed;
+                if (printed.IsFaulted)
+                {
+                    await _toastService.ShowToastAsync("Erro ao imprimir o cupom.");
+                }
+                else
+                {
+                    var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+                    post.Invoice.Printed = true;
+                    invoiceCollection.Update(post.Invoice);
+                }
+
             }
 
-            return; // <<< IMPORTANTE: não envia para retaguarda
-
-        }
-        else
-        {
-
-            Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
-            await printed;
-            if (printed.IsFaulted)
+            var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
+            var bo = await SendInvoiceToBackofficeAsync(backofficeReq);
+            if (!bo)
             {
-                await _toastService.ShowToastAsync("Erro ao imprimir o cupom.");
+                // Mostra mensagem amigável + log opcional com bo.RawBody
+                await _toastService.ShowToastAsync($"Falha ao enviar para retaguarda");
+                // opcional: Console.WriteLine(bo.RawBody);
             }
             else
             {
+                await _toastService.ShowToastAsync("Retaguarda sincronizada.");
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
-                post.Invoice.Printed = true;
+                post.Invoice.Send = true;
                 invoiceCollection.Update(post.Invoice);
             }
 
+            _items.Clear();
+
+            entryQuantity.Text = "1";
+            entryCustomerCpf.Text = string.Empty;
+
+            _ = Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                entryCustomerCpf.Focus();
+
+            });
+
+            UpdateTotal();
+
+            await _toastService.ShowToastAsync("Venda finalizada com sucesso.");
+
+
+        }
+        catch (Exception)
+        {
+
+            throw;
         }
 
-        var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
-        var bo = await SendInvoiceToBackofficeAsync(backofficeReq);
-        if (!bo)
+        finally
         {
-            // Mostra mensagem amigável + log opcional com bo.RawBody
-            await _toastService.ShowToastAsync($"Falha ao enviar para retaguarda");
-            // opcional: Console.WriteLine(bo.RawBody);
-        }
-        else
-        {
-            await _toastService.ShowToastAsync("Retaguarda sincronizada.");
-            var invoiceCollection = _db.GetCollection<Invoice>("invoice");
-            post.Invoice.Send = true;
-            invoiceCollection.Update(post.Invoice);
+            if (sender is Button btn2)
+            {
+                btn2.Text = "Finalizar Venda";
+                btn2.IsEnabled = true;
+            }
+            _isFinalizingSale = false;
         }
 
-        _items.Clear();
 
-        entryQuantity.Text = "1";
-        entryCustomerCpf.Text = string.Empty;
 
-        _ = Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            entryCustomerCpf.Focus();
-
-        });
-
-        UpdateTotal();
-
-        await _toastService.ShowToastAsync("Venda finalizada com sucesso.");
     }
     private void OnQuantityFocused(object sender, FocusEventArgs e)
     {
