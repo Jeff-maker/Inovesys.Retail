@@ -7,7 +7,6 @@
     <ContentPage.MenuBarItems>
         <MenuBarItem Text="Venda Consumidor">
 
-
             <MenuFlyoutItem x:Name="miCancelarItem"
                     Text="Cancelar produto (F2)"
                     Clicked="OnCancelItemClicked">
@@ -17,8 +16,8 @@
             </MenuFlyoutItem>
 
             <MenuFlyoutItem x:Name="miEditQu"
-           Text="Editar Quantidade(F3)"
-           Clicked="OnEditQuant">
+                       Text="Editar Quantidade(F3)"
+                       Clicked="OnEditQuant">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F3" />
                 </MenuFlyoutItem.KeyboardAccelerators>
@@ -117,9 +116,7 @@
                     DisplayMemberPath="Display"
                                 
                     TextMemberPath="Id"
-                    SuggestionChosen="OnSuggestionChosen"
-                    Completed="OnProductCodeEntered"
-                    Unfocused="OnProductCodeUnfocused" />
+                    Completed="OnProductCodeEntered"/>
 
             <Entry x:Name="entryQuantity"
                     Grid.Column="1"
@@ -215,7 +212,32 @@
             <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Cancelar Venda (F8)" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked" />
             <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Cancelar Item (F2)" BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked" />
             <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar venda (F6)" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked" />
+                        
+            
         </Grid>
+
+
+
+
+        <!-- suas RowDefinitions e todo o conteúdo da tela -->
+
+        <!-- ===== OVERLAY DE BUSY ===== -->
+        <Grid Grid.Row="0"
+              Grid.Column="0"
+              Grid.RowSpan="6"
+              Grid.ColumnSpan="3"
+              IsVisible="{Binding IsWorking}"
+              BackgroundColor="#66000000"
+              ZIndex="999"
+              InputTransparent="False">
+
+            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="12" Padding="20">
+                <ActivityIndicator IsRunning="True" WidthRequest="56" HeightRequest="56"/>
+                <Label Text="{Binding Source={x:Reference PageRoot}, Path=BusyText, FallbackValue='Finalizando venda...'}"
+                       FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
+            </VerticalStackLayout>
+        </Grid>
+
 
     </Grid>
 </ContentPage>

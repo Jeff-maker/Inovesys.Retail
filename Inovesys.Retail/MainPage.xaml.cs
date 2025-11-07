@@ -92,6 +92,7 @@ namespace Inovesys.Retail
         private async void OnConsumerSaleClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync(nameof(ConsumerSalePage));
+            //await Shell.Current.GoToAsync(nameof(Consumer)); 
         }
 
         // ================= Núcleo unificado =================

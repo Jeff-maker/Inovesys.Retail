@@ -56,9 +56,56 @@ public partial class ConsumerSalePage : ContentPage
     // Evita recursão quando setamos entryProductCode.Text programaticamente
     private bool _handlingScanEnd = false;
 
+
+    public static readonly BindableProperty IsWorkingProperty =
+        BindableProperty.Create(nameof(IsWorking), typeof(bool), typeof(ConsumerSalePage), false);
+
+    public static readonly BindableProperty BusyTextProperty =
+        BindableProperty.Create(nameof(BusyText), typeof(string), typeof(ConsumerSalePage), "Aguarde...");
+
+    public bool IsWorking
+    {
+        get => (bool)GetValue(IsWorkingProperty);
+        set => SetValue(IsWorkingProperty, value);
+    }
+
+    public string BusyText
+    {
+        get => (string)GetValue(BusyTextProperty);
+        set => SetValue(BusyTextProperty, value);
+    }
+
+    // (opcional) contador para suportar busy aninhado
+    private int _busyDepth = 0;
+    private IDisposable BeginBusy(string text)
+    {
+        BusyText = text;
+        Interlocked.Increment(ref _busyDepth);
+        MainThread.BeginInvokeOnMainThread(() => IsWorking = true);
+        return new ActionOnDispose(() =>
+        {
+            if (Interlocked.Decrement(ref _busyDepth) <= 0)
+            {
+                _busyDepth = 0;
+                MainThread.BeginInvokeOnMainThread(() => { IsWorking = false; BusyText = "Aguarde..."; });
+            }
+        });
+    }
+
+    private sealed class ActionOnDispose : IDisposable
+    {
+        private readonly Action _onDispose;
+        public ActionOnDispose(Action onDispose) => _onDispose = onDispose;
+        public void Dispose() => _onDispose();
+    }
+
+
+
     public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor, ProductRepositoryLiteDb products)
     {
         InitializeComponent();
+        
+        BindingContext = this;
 
         ItemsListView.ItemsSource = _items;
         UpdateTotal();
@@ -91,38 +138,7 @@ public partial class ConsumerSalePage : ContentPage
         {
             if (_handlingScanEnd) return;
 
-            term ??= string.Empty;
-            System.Diagnostics.Debug.WriteLine($"🔎 Digitou: {term}");
-
-            // Se terminou com CR/LF/TAB/; → trata como Enter do scanner
-            if (term.Length > 0 && ScanTerminators.Contains(term[^1]))
-            {
-                _handlingScanEnd = true;
-
-                try
-                {
-                    // Remove todos os terminadores de cauda (ex.: "\r\n")
-                    var cleaned = term.TrimEnd(ScanTerminators);
-
-                    // Atualiza o Entry sem disparar busca novamente
-                    _suppressTextChanged = true;
-                    entryProductCode.Text = cleaned;
-                    _suppressTextChanged = false;
-
-                    // (opcional) limpa sugestões para não “brigar” com o fluxo de inclusão
-                    ProductSuggestions.Clear();
-                    entryProductCode.ItemsSource = null;
-
-                    // Dispara o mesmo handler do Enter
-                    OnProductCodeEntered(entryProductCode, EventArgs.Empty);
-                }
-                finally
-                {
-                    _handlingScanEnd = false;
-                }
-
-                return; // não faz busca
-            }
+            if (_enter) return;
 
             // Fluxo normal: atualizar sugestões
             await SearchProductsAsync(term);
@@ -130,6 +146,7 @@ public partial class ConsumerSalePage : ContentPage
 
         // liga direto no controle Zoft
         entryProductCode.TextChangedCommand = searchCmd;
+      
 
     }
 
@@ -252,9 +269,10 @@ public partial class ConsumerSalePage : ContentPage
                 item.Taxes = taxes;
             }
 
-            // Atribui os itens com taxas à invoice
-            invoice.Items = items;
-            
+            invoice.Items = items
+                 .OrderBy(x => x.ItemNumber)   // ordena por ItemNumber
+                 .ToList();                    // cria nova lista ordenada
+
             var xmlBuilder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company, _x509Certificate2).Build();
 
             if (xmlBuilder.Error != null)
@@ -327,93 +345,100 @@ public partial class ConsumerSalePage : ContentPage
 
     }
 
-
+    private CancellationTokenSource? _cts;
+    private bool _enter = false;
     private async void OnProductCodeEntered(object sender, EventArgs e)
     {
-
-        // Ignora se acabou de navegar (ajuste o tempo conforme necessário)
-        if (_navigating && DateTime.UtcNow - _lastNavigate < TimeSpan.FromMilliseconds(300))
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        _enter = true;
+        await Task.Run(async () =>
         {
-            _navigating = false;
-            return;
-        }
-
-        _navigating = false;
-
-
-        var code = entryProductCode.Text?.Trim();
-        if (string.IsNullOrEmpty(code))
-        {
-            MainThread.BeginInvokeOnMainThread(() =>
+            try
             {
-                entryProductCode.Focus();
+                // espera 200ms sem novas teclas — típico tempo de scanner
+                //ProductSuggestions.Clear();
+                await Task.Delay(200, token);
 
-            });
-            return;
-        }
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    var entry = (Entry)sender;
+                    var code = entry.Text?.Trim();
 
-        var col = _db.GetCollection<Material>("material");
-        var product = col.FindOne(p =>
-            p.ClientId == _branche.ClientId &&
-            (p.Ean13 == code || p.Id == code));
+                    if (string.IsNullOrWhiteSpace(code))
+                        return;
 
-        if (product == null)
-        {
+                    var col = _db.GetCollection<Material>("material");
+                    var product = col.FindOne(p =>
+                        p.ClientId == _branche.ClientId &&
+                        (p.Ean13 == code || p.Id == code));
 
-            entryProductCode.Text = string.Empty;
-            await Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                entryProductCode.Focus();
-            });
+                    if (product == null)
+                    {
 
-            await _toastService.ShowToastAsync("Produto não encontrado.");
-            return;
-        }
+                        entryProductCode.Text = string.Empty;
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            entryProductCode.Focus();
+                        });
 
-        var priceCol = _db.GetCollection<MaterialPrice>("materialprice");
-        var today = DateTime.Today;
+                        _ = _toastService.ShowToastAsync("Produto não encontrado.");
+                        return;
+                    }
 
-        var price = priceCol.FindOne(p =>
-            p.ClientId == _branche.ClientId &&
-            p.MaterialId == product.Id &&
-            p.StartDate <= today &&
-            p.EndDate >= today);
+                    var priceCol = _db.GetCollection<MaterialPrice>("materialprice");
+                    var today = DateTime.Today;
 
-        if (price == null)
-        {
-            await _toastService.ShowToastAsync("Preço não encontrado.");
-            return;
-        }
+                    var price = priceCol.FindOne(p =>
+                        p.ClientId == _branche.ClientId &&
+                        p.MaterialId == product.Id &&
+                        p.StartDate <= today &&
+                        p.EndDate >= today);
 
-        int quantity = 1;
-        if (!int.TryParse(entryQuantity.Text?.Trim(), out quantity))
-            quantity = 1;
+                    if (price == null)
+                    {
+                        _ = _toastService.ShowToastAsync("Preço não encontrado.");
+                        return;
+                    }
 
-        var nextItemNumber = _items.Any()
-            ? _items.Max(i => i.Id) + 1
-            : 1;
+                    int quantity = 1;
+                    if (!int.TryParse(entryQuantity.Text?.Trim(), out quantity))
+                        quantity = 1;
 
-        _items.Add(new ConsumerSaleItem
-        {
-            Id = nextItemNumber,
-            MaterialId = product.Id,
-            Description = product.Name,
-            Price = price.Price,
-            Quantity = quantity,
-            NCM = product.NcmId
-        });
+                    var nextItemNumber = _items.Any()
+                        ? _items.Max(i => i.Id) + 1
+                        : 1;
 
-        entryProductCode.Text = string.Empty;
-        //await Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            entryProductCode.Focus();
+                    _items.Add(new ConsumerSaleItem
+                    {
+                        Id = nextItemNumber,
+                        MaterialId = product.Id,
+                        Description = product.Name,
+                        Price = price.Price,
+                        Quantity = quantity,
+                        NCM = product.NcmId
+                    });
 
-        });
-        entryQuantity.Text = "1";
-        UpdateTotal();
-        //await FocusLastItemAsync();
+                    entryProductCode.Text = string.Empty;
+                    //await Task.Delay(100); // pequeno delay ajuda em dispositivos físicos
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        entryProductCode.Focus();
+
+                    });
+                    entryQuantity.Text = "1";
+                    UpdateTotal();
+
+                    entry.Text = string.Empty; // limpa após processar
+
+                });
+            }
+            catch (TaskCanceledException) { }
+        }, token);
+
+        _enter = false;
+
     }
 
     private Task WaitScrollAsync(int targetIndex, int timeoutMs = 1000)
@@ -554,21 +579,10 @@ public partial class ConsumerSalePage : ContentPage
 
         _isFinalizingSale = true;
 
-
-
-        if (sender is Button btn)
-        {
-            // animação de escala para dar resposta tátil
-            await btn.ScaleTo(0.95, 80);
-            await btn.ScaleTo(1.0, 80);
-
-            // mostra carregando
-            btn.Text = "Finalizando...";
-            btn.IsEnabled = false;
-        }
-
         try
         {
+
+           IsWorking = true;
 
             if (_items.Count == 0)
             {
@@ -707,11 +721,8 @@ public partial class ConsumerSalePage : ContentPage
 
         finally
         {
-            if (sender is Button btn2)
-            {
-                btn2.Text = "Finalizar Venda";
-                btn2.IsEnabled = true;
-            }
+            // 🔓 Esconder overlay
+            IsWorking = false;
             _isFinalizingSale = false;
         }
 
@@ -1757,30 +1768,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
     private ProductSuggestion? _lastChosen;
-    private void OnSuggestionChosen(object sender, EventArgs e)
-    {
-
-        var z = e as zoft.MauiExtensions.Controls.AutoCompleteEntrySuggestionChosenEventArgs;
-        if (z == null) return;
-        if (z.SelectedItem is ProductSuggestion sel)
-        {
-            // Evita “fechar/confirmar” se só mudou o highlight com as setas
-            if (ReferenceEquals(_lastChosen, sel))
-                return;
-
-            _lastChosen = sel;
-
-            if (OperatingSystem.IsAndroid())
-            {
-                // no Android, o Unfocused vem antes do SuggestionChosen
-                // então precisamos navegar “depois” para evitar conflitos
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    OnProductCodeEntered(sender, e);
-                });
-            }
-        }
-    }
+   
 
 
     [RelayCommand] // ou manualmente se não usar CommunityToolkit

@@ -86,7 +86,7 @@
         </Grid>
 
         <!-- ===== OVERLAY DE BUSY ===== -->
-        <Grid IsVisible="{Binding Source={x:Reference MainPageRoot}, Path=IsBusy}"
+        <Grid IsVisible="{Binding Source={x:Reference MainPageRoot}, Path=IsBusy}" x:Name="ifd"
               BackgroundColor="#66000000">
 
             <VerticalStackLayout VerticalOptions="Center"
