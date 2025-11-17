@@ -34,13 +34,19 @@
 
             <MenuFlyoutItem x:Name="miCancelar"
               Text="Cancela venda (F8)"
-              Clicked="OnCancelSaleClicked">
+                    Clicked="OnCancelSaleClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F8" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
 
-           
+            <MenuFlyoutItem Text="Imprimir"
+                    Clicked="OnPrinterClicked">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F4" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+
         </MenuBarItem>
     </ContentPage.MenuBarItems>
 
@@ -61,129 +67,185 @@
 
     <!-- ====== CONTAINER ====== -->
     <Grid Padding="10"
-          RowSpacing="16"
+          RowSpacing="10"
           ColumnDefinitions="*,*,*">
-
-        <!-- 0: Total | 1: CPF+Cadastrar | 2: Código+Qtd | 3: Lista | 4: Ações | 5: Venda -->
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <!-- 0: Total -->
+            <RowDefinition Height="7*" />
             <RowDefinition Height="Auto" />
-            <!-- 1: CPF + Cadastrar -->
             <RowDefinition Height="Auto" />
-            <!-- 2: Código + Quantidade -->
-            <RowDefinition Height="*"    />
-            <!-- 3: Lista -->
-            <RowDefinition Height="Auto" />
-            <!-- 4: Botões Ações -->
-            <RowDefinition Height="Auto" />
-            <!-- 5: Botões Venda -->
         </Grid.RowDefinitions>
 
+        <Entry Grid.Row="0"        
+            x:Name="entryCustomerCpf"
+            Grid.Column="0"
+            Grid.ColumnSpan="3"
+            Placeholder="CPF do consumidor"
+            Keyboard="Numeric"
+            MaxLength="14"
+            Unfocused="OnCpfUnfocused"
+            Completed="OnCpfCompleted"
+            HorizontalOptions="Center"/>
 
-        <Entry x:Name="entryCustomerCpf"
-                       Grid.Column="0"
-                       Grid.Row="0"
-                       Grid.ColumnSpan="3"
-                       Placeholder="CPF do consumidor"
-                       Keyboard="Numeric"
-                       MaxLength="14"
-                       Unfocused="OnCpfUnfocused"
-                       Completed="OnCpfCompleted"
-                       HorizontalOptions="Center"
-                       MaximumWidthRequest="300"/>
-
-        <!--<Button Grid.Column="1"
-                    Text="CADASTRO"
-                    BackgroundColor="DodgerBlue"
-                    TextColor="White"
-                    Padding="12,6"
-                        IsVisible="False"
-                    Clicked="OnCadastrarClienteClicked" />-->
-
-        <!-- ====== (2) CÓDIGO + QUANTIDADE ====== -->
-        <Grid Grid.Row="2"
+        <Grid Grid.Row="1"
+              Grid.Column="0"
               ColumnSpacing="0"
               Grid.ColumnSpan="3"
-              ColumnDefinitions="4*,*">
+              ColumnDefinitions="4*,80"
+              RowDefinitions="Auto,6*,*,Auto">
+            <!-- segunda coluna fixa 80px -->
 
-            <zoft:AutoCompleteEntry
-                    Grid.Column="0"
-                    x:Name="entryProductCode"
-                    Placeholder="Código do produto ou descrição"
-                    Text="{Binding ProductText, Mode=TwoWay}"
-                    ItemsSource="{Binding ProductSuggestions}"
-                    DisplayMemberPath="Display"
-                                
-                    TextMemberPath="Id"
-                    Completed="OnProductCodeEntered"/>
+            <!-- coluna 0: campo + lista -->
+            <VerticalStackLayout Grid.Column="0" 
+                                 Grid.Row="0"
+                                 Spacing="0" 
+                                 VerticalOptions="Start">
 
-            <Entry x:Name="entryQuantity"
-                    Grid.Column="1"
-                    Text="1"
-                    Keyboard="Numeric"
-                    HorizontalTextAlignment="Center"
-                    Completed="OnProductCodeEntered"
-                    Focused="OnQuantityFocused" />
+                <Entry x:Name="entryProductCode"
+                           Placeholder="Digite o nome do produto..."
+                           TextChanged="OnSearchTextChanged"
+                           Completed="OnProductCodeEntered"
+                           Margin="4,0" />
 
+            </VerticalStackLayout>
 
-        </Grid>
+            <!-- coluna 1: entry quantidade alinhado ao topo -->
+            <StackLayout Grid.Row="0"
+                         Grid.Column="1"
+                         VerticalOptions="Start"
+                         HorizontalOptions="Center"
+                         Padding="0">
 
-        <!-- 3) LISTA DE ITENS -->
+                <Entry x:Name="entryQuantity"
+                   Text="1"
+                   Keyboard="Numeric"
+                   HorizontalTextAlignment="Center"
+                   Completed="OnProductCodeEntered"
+                   Focused="OnQuantityFocused"
+                   HeightRequest="40"
+                   WidthRequest="70"
+                   VerticalOptions="Start" />
 
-        <Grid Grid.Column="0"
-              Grid.Row="3"
-              Grid.ColumnSpan="3"
-              Padding="8"
-              HorizontalOptions="Fill"
-              VerticalOptions="Fill"
-              RowDefinitions="*">
+            </StackLayout>
 
-            <CollectionView
-                    x:Name="ItemsListView"
-                    SelectionMode="Single"
-                    ItemsLayout="VerticalList"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    VerticalScrollBarVisibility="Always"
-                    ItemsUpdatingScrollMode="KeepLastItemInView">
+            <!-- 3) LISTA DE ITENS -->
 
+            <CollectionView Grid.Row="1"
+                            Grid.ColumnSpan="3"
+                            Margin="0,10,0,0" 
+                            x:Name="ItemsListView"
+                            SelectionMode="Single"
+                            ItemsLayout="VerticalList"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="Fill"
+                            VerticalScrollBarVisibility="Always"
+                            ItemsUpdatingScrollMode="KeepLastItemInView">
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="models:ConsumerSaleItem">
-                        <Border  StrokeThickness="2" Stroke="#90A4AE" StrokeShape="RoundRectangle 10" HeightRequest="70"
-                                 BackgroundColor="#007bff" 
-                                 Padding="4" Margin="2">
+                        <Border  StrokeThickness="2"
+                                 Stroke="#90A4AE"
+                                 StrokeShape="RoundRectangle 10"
+                                 BackgroundColor="#000080"
+                                 Padding="5"
+                                 Margin="0">
+                            <Grid Padding="4"
+                                  ColumnSpacing="5"
+                                  RowSpacing="0"
+                                  ColumnDefinitions="Auto,3*,Auto,Auto,1*">
+                                <!-- ID -->
+                                <Label Grid.Column="0"
+                                       Text="{Binding Id, StringFormat='{}{0:D4}'}"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="White"
+                                       VerticalOptions="Center" />
+                                <!-- DESCRIÇÃO -->
+                                <Label Grid.Column="1"
+                                       Text="{Binding Description}"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="White"
+                                       VerticalOptions="Center" />
+                                <!-- PREÇO UNITÁRIO -->
+                                <Label Grid.Column="2"
+                                       Text="{Binding Price, StringFormat='R$ {0:F2}'}"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="White"
+                                       HorizontalOptions="Center"
+                                       HorizontalTextAlignment="Center"
+                                       VerticalOptions="Center" />
+                                <!-- QUANTIDADE (EDITÁVEL) -->
+                                <Entry Grid.Column="3"
+                                       Margin="20,0,0,0"
+                                       AutomationId="QtyEntry"
+                                       Text="{Binding Quantity, Mode=TwoWay, StringFormat='{0:N2}'}"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       HeightRequest="15"
+                                       WidthRequest="60"
+                                       Keyboard="Numeric"
+                                       TextColor="White"
+                                       BackgroundColor="#1E88E5"
+                                       HorizontalTextAlignment="Center"
+                                       VerticalOptions="End"
+                                       HorizontalOptions="End"
+                                       Completed="Entry_Completed" />
+                                <!-- TOTAL -->
+                                <Label Grid.Column="4"
+                                       Text="{Binding Total, StringFormat='R$ {0:F2}'}"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="White"
+                                       HorizontalTextAlignment="End"
+                                       HorizontalOptions="Center"
+                                       VerticalOptions="Center" />
 
-                            <Grid Padding="8" ColumnSpacing="8" ColumnDefinitions="*,3*,*,*,*"  RowSpacing="10" VerticalOptions="Center">
-                                <Label 
-                                    
-                                        TextColor="White"
-                                        Grid.Column="0"
-                                        FontSize="12"
-                                        VerticalOptions="Center"
-                                        Text="{Binding Id, StringFormat='{}{0:D4}'}" />
-                                <Label TextColor="White" Grid.Column="1" Text="{Binding Description}" FontSize="12" VerticalOptions="Center"/>
-                                <!--<Label TextColor="White" Grid.Column="1" Text="{Binding Quantity, StringFormat='{0:N0}'}" FontSize="16" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
-                                <!-- Quantidade editável -->
+                            </Grid>
 
-                                <Label TextColor="White" Grid.Column="2" Text="{Binding Price, StringFormat='R$ {0:F2}'}" FontSize="12" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-                                <Entry
-                                                AutomationId = "QtyEntry"            
-                                                Grid.Column="3"
-                                                Text="{Binding Quantity, Mode=TwoWay, StringFormat='{0:N0}'}"
-                                                FontSize="12"
-                                                HeightRequest="28"
-                                                Margin="0"
-                                                Keyboard="Numeric"
-                                                HorizontalTextAlignment="Center"
-                                                VerticalOptions="Center"
-                                                TextColor="White"
-                                                BackgroundColor="#1E88E5"
-                                                WidthRequest="40"
-                                                HorizontalOptions="Center"
-                                    Completed="Entry_Completed"/>
+                        </Border>
 
-                                <Label TextColor="White" Grid.Column="4" Text="{Binding Total, StringFormat='R$ {0:F2}'}" FontSize="12" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+
+            </CollectionView>
+
+            <CollectionView x:Name="suggestionList" Grid.Row="1"  Grid.ColumnSpan="3"
+                    IsVisible="False"
+                    SelectionMode="Single"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Start"
+                    BackgroundColor="White"
+                    Margin="0,10,0,0"        
+                    VisualElement.ZIndex="100" >
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <!-- dê um x:Name ao Border se quiser usar TargetName nos Setters -->
+                        <Border x:Name="itemBorder"
+                        StrokeThickness="0"
+                        Padding="0"
+                        Background="Transparent"
+                        StrokeShape="RoundRectangle 10">
+
+                            <!-- VisualStateManager no elemento raiz do template -->
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup Name="CommonStates">
+                                    <VisualState Name="Normal" />
+                                    <VisualState Name="Selected">
+                                        <VisualState.Setters>
+                                            <!-- seta o Background do próprio Border -->
+                                            <Setter Property="Background" Value="#FFFFE0" />
+
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+
+                            <Grid Padding="8" ColumnDefinitions="2*,5*,2*">
+                                <Label  x:Name="lblId" Grid.Column="0" Text="{Binding Id}" />
+                                <Label  x:Name="lblName" Grid.Column="1" Text="{Binding Name}" />
+                                <Label  x:Name="lblPrice" Grid.Column="2" Text="{Binding Price, StringFormat='R$ {0:N2}'}"
+                               HorizontalTextAlignment="Center" />
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -191,53 +253,86 @@
             </CollectionView>
         </Grid>
 
-        <!-- ====== (0) TOTAL ====== -->
-        <Label x:Name="lblTotal"
-             Grid.Row="4"
-             Grid.Column="0"
-             Text="Total: R$ 0,00"
-             FontSize="28"
-             FontAttributes="Bold"
-             HorizontalOptions="End"
-             VerticalOptions="End"
-             Grid.ColumnSpan="3"      
-             Margin="0,0,0,6" />
+        <StackLayout Grid.Row="2"  Grid.Column="0" 
+                     HorizontalOptions="End" 
+                     VerticalOptions="Center"
+                     Grid.ColumnSpan="4" >
+            <Label x:Name="lblTotal"
+                      Text="Total: R$ 0,00"
+                      FontSize="28"
+                      FontAttributes="Bold"
+                      HorizontalOptions="End"
+                      VerticalOptions="End"
+                      Margin="0,0,0,0" />
+        </StackLayout>
+
+        <StackLayout Grid.Row="3"  Grid.Column="0" 
+                     HorizontalOptions="Center" 
+                     Grid.ColumnSpan="4">
+            <Label 
+                    Grid.Column="0"
+                    Grid.ColumnSpan="3" 
+                    Text="(F2 Cancelar item) (F3 Alterar quantidade) F4 (Imprimir) (F6 Finaliza) (F8 Cancelar venda) " 
+                    FontSize="15"
+                    
+                    Margin="0,0,0,0"
+                    VerticalOptions="Center"/>
+            <Grid 
+                  Grid.ColumnSpan="3"
+                  Margin="0,0,0,0"
+                  ColumnDefinitions="*,*,*"
+                  VerticalOptions="Center">
+
+                <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Canc. Venda" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked" />
+                <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Canc. Item"  BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked" />
+                <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked" />
+            </Grid>
+
+            <Grid 
+                          Grid.ColumnSpan="3"
+                          Margin="0,0,0,0"
+                          ColumnDefinitions="*,*,*"
+                          VerticalOptions="Center">
+
+                <Button Grid.Column="0"  Style="{StaticResource FlexButton}" Text="Canc.Cupom" BackgroundColor="OrangeRed" TextColor="White" Clicked="OnCancelInvoiceSefaz" />
+                <Button Grid.Column="1"  Style="{StaticResource FlexButton}" Text="Imprimir" BackgroundColor="Violet" TextColor="White" Clicked="OnPrinterClicked" />
+
+            </Grid>
 
 
-        <Grid Grid.Row="5" 
-              Grid.ColumnSpan="3"
-              Margin="0,4,0,0"
-              ColumnDefinitions="*,*,*">
-
-            <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Cancelar Venda (F8)" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked" />
-            <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Cancelar Item (F2)" BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked" />
-            <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar venda (F6)" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked" />
-                        
-            
-        </Grid>
 
 
 
 
-        <!-- suas RowDefinitions e todo o conteúdo da tela -->
 
-        <!-- ===== OVERLAY DE BUSY ===== -->
-        <Grid Grid.Row="0"
-              Grid.Column="0"
-              Grid.RowSpan="6"
-              Grid.ColumnSpan="3"
-              IsVisible="{Binding IsWorking}"
-              BackgroundColor="#66000000"
-              ZIndex="999"
-              InputTransparent="False">
 
-            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="12" Padding="20">
-                <ActivityIndicator IsRunning="True" WidthRequest="56" HeightRequest="56"/>
-                <Label Text="{Binding Source={x:Reference PageRoot}, Path=BusyText, FallbackValue='Finalizando venda...'}"
-                       FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
+        </StackLayout>
+
+        <Grid 
+                Grid.Row="0"
+                Grid.RowSpan="99" 
+                Grid.Column="0"
+                Grid.ColumnSpan="99"
+                IsVisible="{Binding IsWorking}"
+                BackgroundColor="#66000000"
+                ZIndex="999"
+                InputTransparent="False"
+                VerticalOptions="Fill"
+                HorizontalOptions="Fill">
+
+            <VerticalStackLayout VerticalOptions="Center"
+                             HorizontalOptions="Center"
+                             Spacing="12"
+                             Padding="20">
+                <ActivityIndicator IsRunning="True"
+                               WidthRequest="56"
+                               HeightRequest="56"/>
+                <Label Text="{Binding BusyText}"
+                   FontSize="18"
+                   FontAttributes="Bold"
+                   TextColor="White"
+                   HorizontalOptions="Center"/>
             </VerticalStackLayout>
         </Grid>
-
-
     </Grid>
 </ContentPage>

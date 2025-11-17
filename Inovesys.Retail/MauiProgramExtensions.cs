@@ -3,6 +3,7 @@ using Inovesys.Infrastructure;
 using Inovesys.Retail.Pages;
 using Inovesys.Retail.Services;
 using Microsoft.Extensions.Logging;
+using Plugin.Maui.KeyListener;
 using zoft.MauiExtensions.Controls;
 
 namespace Inovesys.Retail;
@@ -12,13 +13,18 @@ public static class MauiProgramExtensions
 	public static MauiAppBuilder UseSharedMauiApp(this MauiAppBuilder builder)
 	{
         builder
-       .UseMauiApp<App>()
-       .UseMauiCommunityToolkit().UseZoftAutoCompleteEntry()
-       .ConfigureFonts(fonts =>
-           {
-               fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-               fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
-       });
+     .UseMauiApp<App>()
+        #if ANDROID || IOS || MACCATALYST || TIZEN || WINDOWS
+                .UseMauiCommunityToolkit()
+        #endif
+     .UseZoftAutoCompleteEntry()
+     .UseKeyListener()
+     .ConfigureFonts(fonts =>
+     {
+         fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+         fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+         fonts.AddFont("RobotoMono-Regular.ttf", "Mono");
+     });
 
 
         builder.Services.AddSingleton<HttpClient>(sp =>
@@ -33,7 +39,7 @@ public static class MauiProgramExtensions
         builder.Services.AddTransient<SettingsPage>();
         builder.Services.AddTransient<ConsumerSalePage>();
         builder.Services.AddTransient<CustomerRegistrationPage>();
-
+        
         builder.Services.AddSingleton<LiteDbService>();
         builder.Services.AddSingleton<ProductRepositoryLiteDb>();
         builder.Services.AddSingleton<SyncService>();

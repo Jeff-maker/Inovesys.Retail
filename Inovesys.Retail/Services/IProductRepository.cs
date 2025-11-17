@@ -1,4 +1,5 @@
 ﻿using Inovesys.Retail.Entities;
+using Inovesys.Retail.Models;
 using LiteDB;
 using System.Globalization;
 using System.Linq.Expressions;
@@ -29,7 +30,7 @@ namespace Inovesys.Retail.Services
 
     public interface IProductRepository
     {
-        Task<IReadOnlyList<ProductDto>> FindAsync(
+        Task<IReadOnlyList<ProductSuggestion>> FindAsync(
             string term,
             int limit,
             bool preferCode,
@@ -37,16 +38,6 @@ namespace Inovesys.Retail.Services
             CancellationToken ct);
     }
 
-    public class ProductDto
-    {
-        public string Id { get; set; } = "";  // mapeia Material.Id
-        public string Name { get; set; } = "";  // mapeia Material.Name
-
-        // novos campos:
-        public decimal? Price { get; set; }      // preço por unidade básica (pode ser null se não houver preço)
-        public string PriceUnit { get; set; }   // unidade do preço (ex.: "UN", "KG")
-
-    }
 
     public class ProductRepositoryLiteDb : IProductRepository
     {
@@ -98,7 +89,7 @@ namespace Inovesys.Retail.Services
 
         }
 
-        public async Task<IReadOnlyList<ProductDto>> FindAsync(
+        public async Task<IReadOnlyList<ProductSuggestion>> FindAsync(
                               string term,
                               int limit,
                               bool preferCode,
@@ -111,7 +102,7 @@ namespace Inovesys.Retail.Services
                 var materialsFound = new List<Material>(limit);
 
                 term = (term ?? "").Trim();
-                if (string.IsNullOrEmpty(term)) return Array.Empty<ProductDto>();
+                if (string.IsNullOrEmpty(term)) return Array.Empty<ProductSuggestion>();
 
                 // Preparos para LIKE (case-insensitive via UPPER)
                 string like = "%" + term.ToUpperInvariant() + "%";
@@ -243,13 +234,13 @@ namespace Inovesys.Retail.Services
                 // ATENÇÃO: ajuste 'm.BaseUnit' para o nome correto no seu Material (ex.: MEINS/Unit/MeasureUnit).
                 string GetBaseUnit(Material m) => m.BasicUnit; // <-- ajuste aqui se necessário
 
-                var dtoList = new List<ProductDto>(materialsFound.Count);
+                var dtoList = new List<ProductSuggestion>(materialsFound.Count);
                 foreach (var m in materialsFound)
                 {
                     var baseUnit = GetBaseUnit(m);
                     var (price, unit) = GetCurrentPriceForMaterialUnit(clientId, m.Id, baseUnit);
 
-                    dtoList.Add(new ProductDto
+                    dtoList.Add(new ProductSuggestion
                     {
                         Id = m.Id,
                         Name = m.Name,
@@ -261,7 +252,7 @@ namespace Inovesys.Retail.Services
                     if (dtoList.Count >= limit) break;
                 }
 
-                return (IReadOnlyList<ProductDto>)dtoList;
+                return (IReadOnlyList<ProductSuggestion>)dtoList;
             }, ct);
         }
 

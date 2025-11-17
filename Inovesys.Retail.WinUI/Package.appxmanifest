@@ -9,7 +9,7 @@
   <!-- Identity: Name (reverse DNS estável), Publisher = CN do certificado -->
   <Identity Name="com.inovesys.retail"
             Publisher="CN=Inovesys"
-            Version="1.0.0.3" />
+            Version="1.0.0.5" />
 
   <mp:PhoneIdentity PhoneProductId="2382212B-6248-4081-AC34-B0B44DDEC235" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

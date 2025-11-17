@@ -1,61 +1,55 @@
-﻿using CommunityToolkit.Mvvm.Input;
+﻿using CommunityToolkit.Maui.Extensions;
+using CommunityToolkit.Maui.Views;
+using CommunityToolkit.Mvvm.Input;
 using Inovesys.Retail.Entities;
 using Inovesys.Retail.Models;
 using Inovesys.Retail.Services;
 using LiteDB;
+using Microsoft.Maui.Controls;
+using Plugin.Maui.KeyListener;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Globalization;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Serialization;
-using ZXing.Net.Maui;
 using ZXing.Common;
-using ZXing;
-using Microsoft.Maui.Platform;
-using System.Security.Cryptography.X509Certificates;
 
 namespace Inovesys.Retail.Pages;
 
 public partial class ConsumerSalePage : ContentPage
 {
-    private ObservableCollection<ConsumerSaleItem> _items = new();
-    ProductRepositoryLiteDb _products;
-    private readonly ObservableCollection<ProductSuggestion> ProductSuggestions = new();
+    ToastService _toastService;
 
-    private LiteDbService _db;
+    LiteDbService _db;
 
     UserConfig userConfig;
 
     Client _client { set; get; }
+    
     Company _company { set; get; }
-    private readonly HttpClient _http;
-    private X509Certificate2 _x509Certificate2;
 
-    private Branche _branche { set; get; }
+    ObservableCollection<ConsumerSaleItem> _items = new();
+    
+    ProductRepositoryLiteDb _products;
+    
+    readonly ObservableCollection<ProductSuggestion> ProductSuggestions = new();
+   
+    const int SuggestLimit = 30;
+
+    readonly HttpClient _http;
+
+    X509Certificate2 _x509Certificate2;
+
+    Branche _branche { set; get; }
 
     // Defaults (pode ler de LiteDB/UserConfig depois)
-    private const string DefaultPrinterName = "MP-4200 TH"; // nome no Windows
-
-    private ToastService _toastService;
-
-    private CancellationTokenSource? _typeDebounceCts;
-    private const int DebounceMs = 300;
-
-    private bool _suppressTextChanged = false;
-
-    private bool _handlingUnfocus = false;
-
-    // Terminadores comuns de scanner/simulador
-    private static readonly char[] ScanTerminators = new[] { '\r', '\n', '\t', ';' };
-
-    // Evita recursão quando setamos entryProductCode.Text programaticamente
-    private bool _handlingScanEnd = false;
-
+    const string DefaultPrinterName = "MP-4200 TH"; // nome no Windows
+        
+    private CancellationTokenSource _typeDebounceCts;
 
     public static readonly BindableProperty IsWorkingProperty =
         BindableProperty.Create(nameof(IsWorking), typeof(bool), typeof(ConsumerSalePage), false);
@@ -75,23 +69,6 @@ public partial class ConsumerSalePage : ContentPage
         set => SetValue(BusyTextProperty, value);
     }
 
-    // (opcional) contador para suportar busy aninhado
-    private int _busyDepth = 0;
-    private IDisposable BeginBusy(string text)
-    {
-        BusyText = text;
-        Interlocked.Increment(ref _busyDepth);
-        MainThread.BeginInvokeOnMainThread(() => IsWorking = true);
-        return new ActionOnDispose(() =>
-        {
-            if (Interlocked.Decrement(ref _busyDepth) <= 0)
-            {
-                _busyDepth = 0;
-                MainThread.BeginInvokeOnMainThread(() => { IsWorking = false; BusyText = "Aguarde..."; });
-            }
-        });
-    }
-
     private sealed class ActionOnDispose : IDisposable
     {
         private readonly Action _onDispose;
@@ -99,16 +76,20 @@ public partial class ConsumerSalePage : ContentPage
         public void Dispose() => _onDispose();
     }
 
+    KeyboardBehavior _keyboardBehavior = new KeyboardBehavior();
 
+    
 
     public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor, ProductRepositoryLiteDb products)
     {
         InitializeComponent();
-        
+
         BindingContext = this;
 
         ItemsListView.ItemsSource = _items;
+
         UpdateTotal();
+
         _db = liteDatabase;
         _toastService = toastService;
         _http = httpClientFactor.CreateClient("api");
@@ -133,20 +114,6 @@ public partial class ConsumerSalePage : ContentPage
             }
         };
 
-        // comando (genérico string!)
-        var searchCmd = new Command<string>(async term =>
-        {
-            if (_handlingScanEnd) return;
-
-            if (_enter) return;
-
-            // Fluxo normal: atualizar sugestões
-            await SearchProductsAsync(term);
-        });
-
-        // liga direto no controle Zoft
-        entryProductCode.TextChangedCommand = searchCmd;
-      
 
     }
 
@@ -243,10 +210,105 @@ public partial class ConsumerSalePage : ContentPage
         {
             entryCustomerCpf.Focus();
         });
+
+
+        // adiciona o behavior à página (ou poderia ser ao CollectionView)
+        _keyboardBehavior.KeyDown += OnKeyDown;
+        _keyboardBehavior.KeyUp += KeyUp;
+        this.Behaviors.Add(_keyboardBehavior);
+
+    }
+
+    private void KeyUp(object sender, KeyPressedEventArgs args)
+    {
+
+        if (args.Keys == KeyboardKeys.Return)
+        {
+
+            if( _enter)
+                return;
+
+            if (!suggestionList.IsVisible)
+                return;
+
+            // verifica se existe um item selecionado
+            if (suggestionList.SelectedItem is ProductSuggestion selected)
+            {
+                // seta o texto do entry ANTES de enviar
+                entryProductCode.Text = selected.Id?.ToString();   // ou selected.Name, depende da lógica
+            }
+
+            // agora executa seu método
+            OnProductCodeEntered(entryProductCode, EventArgs.Empty);
+
+            args.Handled = true;
+        }
+
+
     }
 
 
-    private async Task<(bool Success, string QrCode, bool TransportOk, string StatusCode , string msg)> EnviarNotaParaSefaz(Invoice invoice)
+    // Exemplo de handler: KeyDown
+    private void OnKeyDown(object sender, KeyPressedEventArgs args)
+    {
+        if (args.Keys == KeyboardKeys.DownArrow)
+        {
+            if (!entryProductCode.IsFocused)
+                return;
+
+            if (suggestionList.IsVisible && suggestionList.ItemsSource is IList<ProductSuggestion> items && items.Count > 0)
+            {
+                _ignoreSelectionEvent = true; // 👈 bloqueia o evento temporariamente
+
+                // Seleciona o primeiro item
+                suggestionList.SelectedItem = items[0];
+
+                // Garante que o item fique visível
+                suggestionList.ScrollTo(items[0], position: ScrollToPosition.Start, animate: false);
+
+                // Dá foco e força highlight na UI thread
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    suggestionList.Focus();
+
+                    // Força atualização visual de seleção
+                    var selected = suggestionList.SelectedItem;
+                    suggestionList.SelectedItem = null;
+                    suggestionList.SelectedItem = selected;
+
+                    _ignoreSelectionEvent = false; // 👈 reabilita o event
+
+                });
+
+                System.Diagnostics.Debug.WriteLine($"→ Foco movido para o primeiro item: {items[0].Name}");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Lista não visível ou sem itens.");
+            }
+        }
+
+        if (args.Keys == KeyboardKeys.Escape)
+        {
+            // Se a lista está visível, pode esconder (opcional)
+            if (suggestionList.IsVisible)
+            {
+                suggestionList.IsVisible = false;
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    // Remove o foco da lista forçando o entry receber foco
+                    entryProductCode.Focus();
+                });
+
+                args.Handled = true;
+                return;
+            }
+        }
+
+    }
+
+
+    private async Task<(bool Success, string QrCode, bool TransportOk, string StatusCode, string msg)> EnviarNotaParaSefaz(Invoice invoice)
     {
         try
         {
@@ -320,7 +382,7 @@ public partial class ConsumerSalePage : ContentPage
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
 
-                return (true, qrCode, result.TransportOk, result.StatusCode,"Sucesso");
+                return (true, qrCode, result.TransportOk, result.StatusCode, "Sucesso");
 
             }
             else
@@ -341,11 +403,11 @@ public partial class ConsumerSalePage : ContentPage
         var total = _items.Sum(i => i.Price * i.Quantity);
         lblTotal.Text = $"Total: R$ {total.ToString("N2", new CultureInfo("pt-BR"))}";
         ProductSuggestions.Clear();
-        entryProductCode.ItemsSource = null;
+        //entryProductCode.ItemsSource = null;
 
     }
 
-    private CancellationTokenSource? _cts;
+    private CancellationTokenSource _cts;
     private bool _enter = false;
     private async void OnProductCodeEntered(object sender, EventArgs e)
     {
@@ -357,8 +419,7 @@ public partial class ConsumerSalePage : ContentPage
         {
             try
             {
-                // espera 200ms sem novas teclas — típico tempo de scanner
-                //ProductSuggestions.Clear();
+               
                 await Task.Delay(200, token);
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
@@ -460,34 +521,51 @@ public partial class ConsumerSalePage : ContentPage
         return tcs.Task;
     }
 
-    private async Task FocusLastItemAsync()
+    private async void OnCancelItemClicked(object sender, EventArgs e)
     {
-        if (_items.Count == 0) return;
-        var lastIndex = _items.Count - 1;
-        var last = _items[lastIndex];
 
-        await MainThread.InvokeOnMainThreadAsync(async () =>
+        if (_items.Count == 0)
+            return;
+        // Pergunta qual item remover
+        string input = await DisplayPromptAsync(
+            "Remover item",
+            "Digite o número do item que deseja remover:",
+            "OK", "Cancelar",
+            placeholder: "Número do item",
+            keyboard: Keyboard.Numeric);
+
+        if (string.IsNullOrWhiteSpace(input))
         {
-            ItemsListView.SelectedItem = last;
-            ItemsListView.ScrollTo(lastIndex, position: ScrollToPosition.End, animate: true);
-            await WaitScrollAsync(lastIndex, 600);
-            // reforço sem animação (Android costuma precisar)
-            ItemsListView.ScrollTo(lastIndex, position: ScrollToPosition.End, animate: false);
-            await WaitScrollAsync(lastIndex, 400);
-        });
-
-        await Task.Delay(120);
-    }
-
-    private void OnCancelItemClicked(object sender, EventArgs e)
-    {
-        if (ItemsListView.SelectedItem is ConsumerSaleItem selectedItem)
-        {
-            _items.Remove(selectedItem);
-            UpdateTotal();
+            await _toastService.ShowToastAsync("Remoção cancelada.");
+            entryProductCode.Focus();
+            return;
         }
-    }
 
+        // Converte para inteiro
+        if (!int.TryParse(input.Trim(), out int itemId))
+        {
+            await _toastService.ShowToastAsync("Número inválido.");
+            entryProductCode.Focus();
+            return;
+        }
+
+        // Busca o item na lista
+        var itemToRemove = _items.FirstOrDefault(i => i.Id == itemId);
+
+        if (itemToRemove == null)
+        {
+            await _toastService.ShowToastAsync($"Item {itemId} não encontrado.");
+            entryProductCode.Focus();
+            return;
+        }
+
+        // Remove direto sem pedir confirmação
+        _items.Remove(itemToRemove);
+        UpdateTotal();
+
+        await _toastService.ShowToastAsync($"Item {itemId} removido com sucesso.");
+        entryProductCode.Focus();
+    }
 
     private async void OnEditQuant(object sender, EventArgs e)
     {
@@ -562,6 +640,9 @@ public partial class ConsumerSalePage : ContentPage
 
     private async void OnCancelSaleClicked(object sender, EventArgs e)
     {
+        if (_items.Count == 0)
+            return;
+
         if (await DisplayAlert("Cancelar Venda", "Deseja cancelar a venda atual?", "Sim", "Não"))
         {
             _items.Clear();
@@ -574,6 +655,10 @@ public partial class ConsumerSalePage : ContentPage
     private async void OnFinalizeSaleClicked(object sender, EventArgs e)
     {
 
+
+        if (_items.Count == 0)
+            return;
+
         if (_isFinalizingSale)
             return; // já está em execução
 
@@ -582,7 +667,7 @@ public partial class ConsumerSalePage : ContentPage
         try
         {
 
-           IsWorking = true;
+            IsWorking = true;
 
             if (_items.Count == 0)
             {
@@ -943,24 +1028,9 @@ public partial class ConsumerSalePage : ContentPage
     }
 
     enum Align { Left, Right, Center }
-       
 
-    static string FitCell(string text, int width, Align align)
-    {
-        text ??= "";
-        text = ToAsciiEscPos(text);
-        if (text.Length > width) return text.Substring(0, width);
 
-        return align switch
-        {
-            Align.Right => text.PadLeft(width),
-            Align.Center => (text.Length >= width) ? text
-                            : new string(' ', (width - text.Length) / 2)
-                              + text
-                              + new string(' ', width - text.Length - (width - text.Length) / 2),
-            _ => text.PadRight(width),
-        };
-    }
+   
 
     public async Task ImprimirCupomViaEscPosAsync(Invoice invoice, string qrCodeUrl)
     {
@@ -1073,7 +1143,7 @@ public partial class ConsumerSalePage : ContentPage
                 Writeln(ms, $"Protocolo de Autorização: {invoice.AuthorizationProtocol}", COLS);
             if (!string.IsNullOrWhiteSpace(dataAut))
                 Writeln(ms, $"Data de Autorização: {dataAut}", COLS);
-              
+
             // ----- QR como RASTER (compatível com seu emulador e com impressoras reais) -----
             EscPos_Align(ms, 1);
             var qrRaster = BuildQrRasterEscPosMaui(qrCodeUrl, sizePx: 256); // 256 ~ bom para 58/80mm
@@ -1165,7 +1235,7 @@ public partial class ConsumerSalePage : ContentPage
     }
 
 
-    static string ToAsciiEscPos(string? text)
+    static string ToAsciiEscPos(string text)
     {
         if (string.IsNullOrEmpty(text)) return string.Empty;
 
@@ -1252,7 +1322,7 @@ public partial class ConsumerSalePage : ContentPage
 
     static void Line(Stream s, int width = 48) => Writeln(s, new string('-', width), width);
 
-    static string CpfMask(string? cpf)
+    static string CpfMask(string cpf)
     {
         cpf = cpf?.Trim().Replace(".", "").Replace("-", "");
         if (string.IsNullOrEmpty(cpf) || cpf.Length != 11) return cpf ?? "";
@@ -1481,7 +1551,7 @@ public partial class ConsumerSalePage : ContentPage
         DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
 
 
-    private async Task EmitirEmContingenciaAsync(Invoice invoice, string motivoFalha, string? qrCodeUrl = null)
+    private async Task EmitirEmContingenciaAsync(Invoice invoice, string motivoFalha, string qrCodeUrl = null)
     {
         // (re)carrega itens + tributos (igual você já faz antes do builder)
         var itemCollection = _db.GetCollection<InvoiceItem>("invoiceitem");
@@ -1492,8 +1562,6 @@ public partial class ConsumerSalePage : ContentPage
             it.Taxes = taxCollection.Find(t => t.ClientId == invoice.ClientId && t.InvoiceId == invoice.InvoiceId && t.ItemNumber == it.ItemNumber).ToList();
 
         invoice.Items = items;
-
-        
 
         // Monta XML "normal" e converte para contingência (tpEmis=9)
         var builder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company, _x509Certificate2).Build();
@@ -1641,8 +1709,6 @@ public partial class ConsumerSalePage : ContentPage
                 var xmlAssinado = Encoding.UTF8.GetString(Convert.FromBase64String(inv.AuthorizedXml));
                 var sefazService = new SefazService(_db, _company);
 
-                
-
                 var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv, _client.EnvironmentSefaz, _x509Certificate2);
                 if (result.Success)
                 {
@@ -1668,109 +1734,6 @@ public partial class ConsumerSalePage : ContentPage
         await _toastService.ShowToastAsync($"Contingencia -> SEFAZ concluido. Sucesso: {ok}, Falhas: {fail}.");
     }
 
-    private const int SuggestLimit = 7;
-    private int _querySeq = 0; // evita race conditions entre buscas
-
-    private async Task SearchProductsAsync(string term)
-    {
-        if (_suppressTextChanged) return;
-
-        // cancela a busca anterior E dispose
-        _typeDebounceCts?.Cancel();
-        _typeDebounceCts?.Dispose();
-        _typeDebounceCts = new CancellationTokenSource();
-        var token = _typeDebounceCts.Token;
-
-        term = (term ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(term))
-        {
-            ProductSuggestions.Clear();
-            entryProductCode.ItemsSource = null;
-            return;
-        }
-
-        var mySeq = ++_querySeq;
-
-        try
-        {
-            await Task.Delay(DebounceMs, token);
-
-            var hasDigit = term.Any(char.IsDigit);
-            var hasLetter = term.Any(char.IsLetter);
-            bool preferCode = (hasDigit && !hasLetter && term.Length >= 3) || (hasDigit && hasLetter);
-
-            // opcional: também limitar por tempo total
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, timeoutCts.Token);
-
-            var results = await _products.FindAsync(
-                term: term,
-                limit: SuggestLimit,
-                preferCode: preferCode,
-                clientId: userConfig.ClientId,
-                ct: linked.Token);
-
-            if (mySeq != _querySeq) return; // resposta antiga → ignora
-
-            ProductSuggestions.Clear();
-            foreach (var p in results)
-                ProductSuggestions.Add(new ProductSuggestion { Id = p.Id, Name = p.Name, Price = p.Price , PriceUnit = p.PriceUnit });
-            entryProductCode.ItemsSource = null;
-            entryProductCode.ItemsSource =  ProductSuggestions;
-        }
-        catch (TaskCanceledException) { /* digitação contínua → esperado */ }
-        catch (OperationCanceledException) { /* idem */ }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Busca falhou: {ex}");
-            ProductSuggestions.Clear();
-        }
-    }
-
-    bool _navigating = false;
-    DateTime _lastNavigate = DateTime.MinValue;
-
-    private void OnProductCodeUnfocused(object sender, FocusEventArgs e)
-    {
-        //if (_lastChosen != null)
-        //{
-        //    // limpa sugestão destacada
-
-        //    var z = sender as zoft.MauiExtensions.Controls.AutoCompleteEntry;
-        //    if (z.SelectedSuggestion == null) return;
-
-        //    if (z.SelectedSuggestion == _lastChosen)
-        //    {
-        //        //entryProductCode.Text = _lastChosen.Id;
-        //        OnProductCodeEntered(sender, e);
-        //    }
-        //    _lastChosen = null;
-        //}
-    }
-    private void OnItemTapped(object sender, TappedEventArgs e)
-    {
-        if (sender is Element el && el.BindingContext is ConsumerSaleItem item)
-        {
-            // opcional: marcar seleção visual
-            ItemsListView.SelectedItem = item;
-
-
-            // faça sua ação de “clique” aqui:
-            // ex: abrir edição de quantidade, remover, etc.
-            // await EditarItemAsync(item);
-        }
-    }
-
-    private void OnItemSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        var item = e.CurrentSelection?.FirstOrDefault() as ConsumerSaleItem;
-        // habilite/desabilite botões, etc.
-    }
-
-    private ProductSuggestion? _lastChosen;
-   
-
-
     [RelayCommand] // ou manualmente se não usar CommunityToolkit
     public async Task OnEditQuantityCommand(ConsumerSaleItem item)
     {
@@ -1794,8 +1757,201 @@ public partial class ConsumerSalePage : ContentPage
 
     private void Entry_Completed(object sender, EventArgs e)
     {
+        if (sender is Entry entry)
+        {
+            if (decimal.TryParse(entry.Text, out decimal qty))
+            {
+                if (qty < 0)
+                {
+                    qty = 1; // impede zero
+                    entry.Text = "1";
+                }
+            }
+            else
+            {
+                entry.Text = "1"; // inválido → volta para 1
+            }
+        }
         entryProductCode.Focus();
     }
+
+    private async void OnSearchTextChanged(object sender, TextChangedEventArgs e)
+    {
+
+        // cancela a busca anterior E dispose
+        _typeDebounceCts?.Cancel();
+        _typeDebounceCts?.Dispose();
+        _typeDebounceCts = new CancellationTokenSource();
+        var token = _typeDebounceCts.Token;
+
+
+        var term = e.NewTextValue?.Trim();
+        if (string.IsNullOrWhiteSpace(term))
+        {
+            suggestionList.IsVisible = false;
+            return;
+        }
+
+        var results = await _products.FindAsync(
+                    term: term,
+                    limit: SuggestLimit,
+                    preferCode: true,
+                    clientId: userConfig.ClientId,
+                    ct: _typeDebounceCts.Token);
+
+        suggestionList.ItemsSource = results.ToList();
+        suggestionList.IsVisible = results.Any();
+    }
+
+    private void OnSuggestionSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ignoreSelectionEvent)
+            return;
+        if (e.CurrentSelection.FirstOrDefault() is ProductSuggestion selected)
+        {
+            //entryProductCode.Text = selected.Id;
+            //suggestionList.IsVisible = false;
+            //aqui você pode chamar sua função
+            //OnProductCodeEntered(sender,e);
+        }
+    }
+
+    private void OnItemDoubleTapped(object sender, TappedEventArgs e)
+    {
+        if (sender is Border border && border.BindingContext is ProductSuggestion selected)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DuploClique] {selected.Name} ({selected.Id})");
+
+            // Aqui você trata como “confirmar produto”
+            entryProductCode.Text = selected.Id;
+            suggestionList.IsVisible = false;
+
+            // Opcional: chama sua lógica de confirmação
+            OnProductCodeEntered(entryProductCode, EventArgs.Empty);
+        }
+    }
+
+    private bool _ignoreSelectionEvent = false;
+    private void F4(object sender, EventArgs e)
+    {
+        System.Diagnostics.Debug.WriteLine("F4 pressionado → foco no primeiro item");
+
+        if (suggestionList.IsVisible &&
+            suggestionList.ItemsSource is IList<ProductSuggestion> items &&
+            items.Count > 0)
+        {
+
+            _ignoreSelectionEvent = true; // 👈 bloqueia o evento temporariamente
+
+            // Seleciona o primeiro item
+            suggestionList.SelectedItem = items[0];
+
+            // Garante que o item fique visível
+            suggestionList.ScrollTo(items[0], position: ScrollToPosition.Start, animate: false);
+
+            // Dá foco e força highlight na UI thread
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                suggestionList.Focus();
+
+                // Força atualização visual de seleção
+                var selected = suggestionList.SelectedItem;
+                suggestionList.SelectedItem = null;
+                suggestionList.SelectedItem = selected;
+
+                _ignoreSelectionEvent = false; // 👈 reabilita o event
+
+            });
+
+            System.Diagnostics.Debug.WriteLine($"→ Foco movido para o primeiro item: {items[0].Name}");
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine("Lista não visível ou sem itens.");
+        }
+    }
+
+    private async void OnPrinterClicked(object sender, EventArgs e)
+    {
+        var page = new LastAuthorizedNotasPage(_db, userConfig);
+
+        // quando o usuário selecionar a nota, continua o fluxo
+        page.NotaSelecionada += async (nota) =>
+        {
+            if (nota != null)
+            {
+                nota.Items = _db.GetCollection<InvoiceItem>("invoiceitem")
+                    .Find(i => i.ClientId == nota.ClientId && i.InvoiceId == nota.InvoiceId).ToList();
+
+                var ibpt = TaxUtils.CalculateApproximateTaxes(nota, _db, assumeImported: false);
+                nota.AdditionalInfo = TaxUtils.BuildIbptObservation(ibpt);
+
+                await ImprimirCupomViaEscPosAsync(nota, nota.QrCode);
+
+                // após a impressão, fecha a página (volta)
+                await Navigation.PopAsync();
+
+            }
+        };
+
+
+        // ESCUTAR QUANDO FECHAR
+        page.PageClosed += () =>
+        {
+            // após a impressão, fecha a página (volta)
+            Navigation.PopAsync();
+        };
+
+        await Navigation.PushAsync(page);
+    }
+
+
+    private async void OnCancelInvoiceSefaz(object sender, EventArgs e)
+    {
+        var page = new LastAuthorizedNotasPage(_db, userConfig);
+
+        // quando o usuário selecionar a nota, continua o fluxo
+        page.NotaSelecionada += async (nota) =>
+        {
+            if (nota != null)
+            {
+                nota.Items = _db.GetCollection<InvoiceItem>("invoiceitem")
+                    .Find(i => i.ClientId == nota.ClientId && i.InvoiceId == nota.InvoiceId).ToList();
+
+
+                bool ok = await DisplayAlert(
+                            "Atenção",
+                            "Confirma o cancelamento do Cupom Fiscal?",
+                            "Sim",
+                            "Não"
+                        );
+
+                if (ok)
+                {
+                    
+                }
+
+                await Navigation.PopAsync();
+
+            }
+        };
+
+
+        // ESCUTAR QUANDO FECHAR
+        page.PageClosed += () =>
+        {
+            // após a impressão, fecha a página (volta)
+            Navigation.PopAsync();
+        };
+
+        await Navigation.PushAsync(page);
+
+
+    }
+
+
+
+
 }
 
 

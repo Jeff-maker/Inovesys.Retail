@@ -9,8 +9,8 @@ namespace Inovesys.Retail.Models
         public string Description { get; set; }
         public decimal Price { get; set; }
 
-        private int _quantity = 1;
-        public int Quantity
+        private decimal _quantity;
+        public decimal Quantity
         {
             get => _quantity;
             set
@@ -25,8 +25,6 @@ namespace Inovesys.Retail.Models
         }
 
         public string NCM { get; set; }
-
-        
 
         public decimal Total => Price * Quantity;
 

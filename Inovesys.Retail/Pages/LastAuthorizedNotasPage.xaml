@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage 
+    x:Class="Inovesys.Retail.Pages.LastAuthorizedNotasPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- GRID PRINCIPAL -->
+    <Grid BackgroundColor="White"
+          Padding="18"
+          RowDefinitions="Auto,*,Auto">
+
+        <!-- CABEÇALHO + PESQUISA -->
+        <VerticalStackLayout Grid.Row="0" Spacing="10">
+            <Label Text="Últimas Notas Autorizadas"
+                   FontAttributes="Bold"
+                   FontSize="20"
+                   HorizontalOptions="Center" />
+
+            <SearchBar x:Name="NotaSearchBar"
+                       Placeholder="Pesquisar número da nota"
+                       SearchButtonPressed="OnSearchButtonPressed"
+                       TextChanged="OnSearchTextChanged" />
+        </VerticalStackLayout>
+
+        <!-- LISTA (OCUPA 80% APROX.) -->
+        <CollectionView Grid.Row="1"
+                        x:Name="NotasList"
+                        SelectionMode="Single"
+                        VerticalOptions="Fill"
+                        HorizontalOptions="Fill">
+
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Border Padding="8"
+                            Background="#F2F2F2"
+                            StrokeThickness="0">
+
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnNotaTapped" />
+                        </Border.GestureRecognizers>
+
+                        <VerticalStackLayout>
+                            <Label Text="{Binding Nfe}" FontAttributes="Bold" />
+                            <Label Text="{Binding AuthorizationDate}" FontSize="12" />
+                            <Label Text="{Binding TotalAmount, StringFormat='R${0:N2}'}" FontSize="12" />
+                        </VerticalStackLayout>
+
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+
+        </CollectionView>
+
+        <!-- BOTÃO FECHAR NO RODAPÉ À DIREITA -->
+        <Button Grid.Row="2"
+                Text="Fechar"
+                BackgroundColor="Red"
+                CornerRadius="8"
+                Padding="14,8"
+                HorizontalOptions="End"
+                VerticalOptions="End"
+                Clicked="OnCloseClicked"/>
+    </Grid>
+
+</ContentPage>

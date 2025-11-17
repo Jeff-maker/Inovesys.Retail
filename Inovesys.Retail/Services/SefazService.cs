@@ -45,15 +45,6 @@ public class SefazService
                 return (false, false, "XML1", $"XML inválido: {ex.Message}", null, null, null);
             }
 
-            //// HTTP + certificado
-            //var handler = new HttpClientHandler
-            //{
-            //    ClientCertificateOptions = ClientCertificateOption.Manual,
-            //    SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13
-            //};
-            //handler.ClientCertificates.Add(cert);
-
-
             // Carrega certificado e cria HttpClient com ele
             var client = SefazHttpPlatform.CreateClient(cert);
 

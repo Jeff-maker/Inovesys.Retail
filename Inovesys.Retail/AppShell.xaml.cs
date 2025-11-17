@@ -11,7 +11,9 @@ namespace Inovesys.Retail
             Routing.RegisterRoute(nameof(SettingsPage), typeof(SettingsPage));
             Routing.RegisterRoute(nameof(LoginPage), typeof(LoginPage));
             Routing.RegisterRoute(nameof(ConsumerSalePage), typeof(ConsumerSalePage));
-            
+            Routing.RegisterRoute(nameof(LastAuthorizedNotasPage), typeof(LastAuthorizedNotasPage));
+
+
 
         }
     }
