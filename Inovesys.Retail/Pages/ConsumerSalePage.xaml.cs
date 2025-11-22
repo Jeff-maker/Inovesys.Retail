@@ -1,11 +1,8 @@
-﻿using CommunityToolkit.Maui.Extensions;
-using CommunityToolkit.Maui.Views;
-using CommunityToolkit.Mvvm.Input;
+﻿using CommunityToolkit.Mvvm.Input;
 using Inovesys.Retail.Entities;
 using Inovesys.Retail.Models;
 using Inovesys.Retail.Services;
 using LiteDB;
-using Microsoft.Maui.Controls;
 using Plugin.Maui.KeyListener;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -312,8 +309,7 @@ public partial class ConsumerSalePage : ContentPage
     {
         try
         {
-            // Carrega os itens da nota
-
+            
             var itemCollection = _db.GetCollection<InvoiceItem>("invoiceitem");
             var items = itemCollection
                 .Find(i => i.ClientId == invoice.ClientId && i.InvoiceId == invoice.InvoiceId)
@@ -332,15 +328,13 @@ public partial class ConsumerSalePage : ContentPage
             }
 
             invoice.Items = items
-                 .OrderBy(x => x.ItemNumber)   // ordena por ItemNumber
-                 .ToList();                    // cria nova lista ordenada
+                 .OrderBy(x => x.ItemNumber)   
+                 .ToList();                    
 
             var xmlBuilder = new NFeXmlBuilder(invoice, _client.EnvironmentSefaz, _db, _branche, _company, _x509Certificate2).Build();
 
             if (xmlBuilder.Error != null)
             {
-                Console.WriteLine($"Erro ao gerar XML: {xmlBuilder.Error.Message}");
-                // Opcional: detalhar exceção interna
                 if (xmlBuilder.Error.InnerException != null)
                     await _toastService.ShowToastAsync(xmlBuilder.Error.InnerException.Message);
                 return (false, null, true, "9999", xmlBuilder.Error.InnerException.Message);
@@ -349,7 +343,7 @@ public partial class ConsumerSalePage : ContentPage
             var signedXml = xmlBuilder.Xml.InnerXml;
             var qrCode = xmlBuilder.QrCode;
 
-            var sefazService = new SefazService(_db, _company); // instanciado com seus parâmetros
+            var sefazService = new SefazService(_db, _company, _branche); 
 
             var result = await sefazService.SendToSefazAsync(invoice.InvoiceId, signedXml, invoice, _client.EnvironmentSefaz, _x509Certificate2);
 
@@ -357,8 +351,7 @@ public partial class ConsumerSalePage : ContentPage
             {
                 invoice.NfeStatus = "AUTORIZADA";
                 invoice.Protocol = result.ProtocolXml;
-
-                // Desserializa o protocolo para pegar as datas e número
+                                
                 var serializer = new XmlSerializer(typeof(ProtNFe));
                 using var reader = new StringReader(result.ProtocolXml);
                 var resultx = (ProtNFe)serializer.Deserialize(reader);
@@ -378,7 +371,6 @@ public partial class ConsumerSalePage : ContentPage
 
                 invoice.AuthorizedXml = Convert.ToBase64String(Encoding.UTF8.GetBytes(xmlAutorizado));
 
-                // Atualiza no banco
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 invoiceCollection.Update(invoice);
 
@@ -403,8 +395,6 @@ public partial class ConsumerSalePage : ContentPage
         var total = _items.Sum(i => i.Price * i.Quantity);
         lblTotal.Text = $"Total: R$ {total.ToString("N2", new CultureInfo("pt-BR"))}";
         ProductSuggestions.Clear();
-        //entryProductCode.ItemsSource = null;
-
     }
 
     private CancellationTokenSource _cts;
@@ -1443,7 +1433,6 @@ public partial class ConsumerSalePage : ContentPage
 
     private async void OnCadastrarClienteClicked(object sender, EventArgs e)
     {
-        _fromButton = true; // marca que o foco saiu por causa do clique
 
         string cpf = entryCustomerCpf.Text?.Trim();
 
@@ -1460,8 +1449,6 @@ public partial class ConsumerSalePage : ContentPage
             return;
         }
 
-        // aqui você chama sua lógica de cadastro
-        // por exemplo: abre uma nova página ou envia para API
         await Navigation.PushAsync(new CustomerRegistrationPage(cpf, _db));
     }
 
@@ -1469,7 +1456,8 @@ public partial class ConsumerSalePage : ContentPage
     {
         validarCPF();
     }
-    private bool _fromButton = false;
+    
+        
     private void OnCpfUnfocused(object sender, FocusEventArgs e)
     {
         validarCPF();
@@ -1480,7 +1468,6 @@ public partial class ConsumerSalePage : ContentPage
         var cpf = entryCustomerCpf.Text?.Trim();
         if (string.IsNullOrEmpty(cpf))
         {
-            entryProductCode.Focus(); // não valida se estiver vazio
             return;
         }
 
@@ -1496,7 +1483,6 @@ public partial class ConsumerSalePage : ContentPage
         {
             // se válido, formata
             entryCustomerCpf.Text = MaskCpf(cpf);
-
 
             // joga o foco no código do produto
             MainThread.BeginInvokeOnMainThread(() =>
@@ -1540,7 +1526,6 @@ public partial class ConsumerSalePage : ContentPage
         return Convert.ToUInt64(cpf).ToString(@"000\.000\.000\-00");
     }
 
-
     private static readonly TimeZoneInfo TzSp = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
 
     private static DateTime NowSp() =>
@@ -1549,7 +1534,6 @@ public partial class ConsumerSalePage : ContentPage
     /// Força DateTime “parede de SP” (sem Kind para não haver conversão automática)
     private static DateTime SpWall(DateTime dt) =>
         DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
-
 
     private async Task EmitirEmContingenciaAsync(Invoice invoice, string motivoFalha, string qrCodeUrl = null)
     {
@@ -1707,7 +1691,7 @@ public partial class ConsumerSalePage : ContentPage
             {
                 // Usa o AuthorizedXml como fonte (já é o XML assinado com tpEmis=9)
                 var xmlAssinado = Encoding.UTF8.GetString(Convert.FromBase64String(inv.AuthorizedXml));
-                var sefazService = new SefazService(_db, _company);
+                var sefazService = new SefazService(_db, _company,_branche);
 
                 var result = await sefazService.SendToSefazAsync(inv.InvoiceId, xmlAssinado, inv, _client.EnvironmentSefaz, _x509Certificate2);
                 if (result.Success)
@@ -1751,7 +1735,6 @@ public partial class ConsumerSalePage : ContentPage
         if (int.TryParse(result, out int novaQtd) && novaQtd > 0)
         {
             item.Quantity = novaQtd;
-            // Atualiza a CollectionView (se estiver usando ObservableCollection, ela se atualiza sozinha)
         }
     }
 
@@ -1809,10 +1792,6 @@ public partial class ConsumerSalePage : ContentPage
             return;
         if (e.CurrentSelection.FirstOrDefault() is ProductSuggestion selected)
         {
-            //entryProductCode.Text = selected.Id;
-            //suggestionList.IsVisible = false;
-            //aqui você pode chamar sua função
-            //OnProductCodeEntered(sender,e);
         }
     }
 
@@ -1871,7 +1850,7 @@ public partial class ConsumerSalePage : ContentPage
         }
     }
 
-    private async void OnPrinterClicked(object sender, EventArgs e)
+    private void OnPrinterClicked(object sender, EventArgs e)
     {
         var page = new LastAuthorizedNotasPage(_db, userConfig);
 
@@ -1902,12 +1881,13 @@ public partial class ConsumerSalePage : ContentPage
             Navigation.PopAsync();
         };
 
-        await Navigation.PushAsync(page);
+        Navigation.PushAsync(page);
     }
 
 
-    private async void OnCancelInvoiceSefaz(object sender, EventArgs e)
+    private async void OnCancelInoviceClicked(object sender, EventArgs e)
     {
+
         var page = new LastAuthorizedNotasPage(_db, userConfig);
 
         // quando o usuário selecionar a nota, continua o fluxo
@@ -1928,7 +1908,72 @@ public partial class ConsumerSalePage : ContentPage
 
                 if (ok)
                 {
-                    
+
+                    var sefazService = new SefazService(_db, _company, _branche);
+
+                    // 1) montar XML cancelamento
+                    var build = sefazService.BuildCancelEventXml(
+                            chaveNFe: nota.NfKey,
+                            protocoloAutorizacao: nota.Protocol,
+                            justificativa: "Cancelamento solicitado pelo cliente.",
+                            ambiente: _client.EnvironmentSefaz,
+                            cert: _x509Certificate2);
+
+                    if (build.Error != null)
+                    {
+                        await DisplayAlert("Erro", build.Error.Message, "OK");
+                        return;
+                    }
+
+                    // 2) enviar para SEFAZ
+                    var cancel = await sefazService.SendCancelEventAsync(build.Xml, _client.EnvironmentSefaz, _x509Certificate2);
+
+                    if (cancel.Success)
+                    {
+                        nota.NfeStatus = "CANCELADA";
+                        _db.GetCollection<Invoice>("invoice").Update(nota);
+
+                        await DisplayAlert("OK", "Cupom cancelado com sucesso!", "OK");
+                    }
+                    else
+                    {
+                        await DisplayAlert("Erro", $"{cancel.StatusCode}: {cancel.StatusMessage}", "OK");
+                    }
+                }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                {
+
                 }
 
                 await Navigation.PopAsync();
@@ -1948,10 +1993,6 @@ public partial class ConsumerSalePage : ContentPage
 
 
     }
-
-
-
-
 }
 
 

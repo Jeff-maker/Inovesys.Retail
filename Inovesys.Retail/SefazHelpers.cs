@@ -59,36 +59,10 @@ namespace Inovesys.Retail
 
                 //var certificate = new X509Certificate2(certInfo.PfxFile, password, flags);
 
-
                 var certificate = X509CertificateLoader.LoadPkcs12(
                            certInfo.PfxFile,
                            password,
                             flags);
-
-
-                //X509Certificate2 certificate;
-
-                //#if NET9_0_OR_GREATER
-                //                certificate = X509CertificateLoader.LoadPkcs12(certInfo.PfxFile, password, flags);
-                //#else
-                //#pragma warning disable SYSLIB0057
-                //        certificate = new X509Certificate2(certInfo.PfxFile, password, flags);
-                //#pragma warning restore SYSLIB0057
-                //#endif
-                //var certificate = new X509Certificate2(certInfo.PfxFile, password, flags);
-
-
-                //var certificate = X509CertificateLoader.LoadPkcs12(
-                //    certInfo.PfxFile,
-                //    password,
-                //    X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet);
-
-
-                // 🔍 Log básico de diagnóstico
-                System.Diagnostics.Debug.WriteLine($"[CERT] Subject={certificate.Subject}");
-                System.Diagnostics.Debug.WriteLine($"[CERT] HasPrivateKey={certificate.HasPrivateKey}");
-                System.Diagnostics.Debug.WriteLine($"[CERT] NotAfter={certificate.NotAfter:yyyy-MM-dd}");
-                System.Diagnostics.Debug.WriteLine($"[CERT] Thumbprint={certificate.Thumbprint}");
 
                 if (!certificate.HasPrivateKey)
                     throw new Exception("O certificado foi carregado, mas não contém chave privada.");

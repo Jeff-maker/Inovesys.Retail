@@ -3,6 +3,7 @@ using Inovesys.Retail.Entities;
 using Inovesys.Retail.Services;
 using System.Net.Http.Headers;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.Xml;
 using System.Text;
 using System.Xml;
 
@@ -10,11 +11,13 @@ public class SefazService
 {
     private readonly LiteDbService _db;
     private readonly Company _company;
+    private readonly Branche _branche;
 
-    public SefazService(LiteDbService db, Company company)
+    public SefazService(LiteDbService db, Company company,Branche branche)
     {
         _db = db;
         _company = company;
+        _branche = branche;
     }
 
     public async Task<(  bool Success,            // autorizado (cStat 100/150)
@@ -281,6 +284,174 @@ public class SefazService
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Gera e assina o XML de cancelamento (envEvento) da NF-e.
+    /// </summary>
+    public (XmlDocument Xml, string IdEvento, Exception Error) BuildCancelEventXml(
+        string chaveNFe,
+        string protocoloAutorizacao,
+        string justificativa,
+        string ambiente, // "1" Prod / "2" Homolog
+        X509Certificate2 cert)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(chaveNFe) || chaveNFe.Length != 44)
+                throw new Exception("Chave NFe inválida.");
+
+            if (string.IsNullOrWhiteSpace(protocoloAutorizacao))
+                throw new Exception("Protocolo de autorização (nProt) não informado.");
+
+            if (string.IsNullOrWhiteSpace(justificativa) || justificativa.Length < 15)
+                throw new Exception("Justificativa inválida (mínimo 15 caracteres).");
+
+            var xml = new XmlDocument { PreserveWhitespace = true };
+            const string ns = "http://www.portalfiscal.inf.br/nfe";
+
+            var envEvento = xml.CreateElement("envEvento", ns);
+            envEvento.SetAttribute("versao", "1.00");
+
+            envEvento.AppendChild(CreateElem(xml, ns, "idLote", DateTime.Now.ToString("yyyyMMddHHmmss")));
+
+            var evento = xml.CreateElement("evento", ns);
+            evento.SetAttribute("versao", "1.00");
+            envEvento.AppendChild(evento);
+
+            string tpEvento = "110111"; // CANCELAMENTO
+            string idEvento = "ID" + tpEvento + chaveNFe + "01"; // nSeqEvento = 1
+
+            var infEvento = xml.CreateElement("infEvento", ns);
+            infEvento.SetAttribute("Id", idEvento);
+
+            evento.AppendChild(infEvento);
+
+            infEvento.AppendChild(CreateElem(xml, ns, "cOrgao", chaveNFe.Substring(0, 2)));
+            infEvento.AppendChild(CreateElem(xml, ns, "tpAmb", ambiente));
+            infEvento.AppendChild(CreateElem(xml, ns, "CNPJ", _branche.Cnpj.Replace(".", "").Replace("/", "").Replace("-", "")));
+            infEvento.AppendChild(CreateElem(xml, ns, "chNFe", chaveNFe));
+            infEvento.AppendChild(CreateElem(xml, ns, "dhEvento", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:sszzz")));
+            infEvento.AppendChild(CreateElem(xml, ns, "tpEvento", tpEvento));
+            infEvento.AppendChild(CreateElem(xml, ns, "nSeqEvento", "1"));
+            infEvento.AppendChild(CreateElem(xml, ns, "verEvento", "1.00"));
+
+            var det = xml.CreateElement("detEvento", ns);
+            det.SetAttribute("versao", "1.00");
+
+            det.AppendChild(CreateElem(xml, ns, "descEvento", "Cancelamento"));
+            det.AppendChild(CreateElem(xml, ns, "nProt", protocoloAutorizacao));
+            det.AppendChild(CreateElem(xml, ns, "xJust", justificativa));
+
+            infEvento.AppendChild(det);
+
+            xml.AppendChild(envEvento);
+
+            // ASSINAR
+            SignXml(xml, idEvento, cert);
+
+            return (xml, idEvento, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, null, ex);
+        }
+    }
+
+    private XmlElement CreateElem(XmlDocument xml, string ns, string name, string value)
+    {
+        var e = xml.CreateElement(name, ns);
+        e.InnerText = value ?? "";
+        return e;
+    }
+
+    private void SignXml(XmlDocument xml, string referenceId, X509Certificate2 cert)
+    {
+        var signed = new SignedXml(xml);
+        signed.SigningKey = cert.GetRSAPrivateKey();
+
+        var reference = new Reference("#" + referenceId);
+        reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
+        reference.AddTransform(new XmlDsigC14NTransform());
+
+        signed.AddReference(reference);
+
+        var ki = new KeyInfo();
+        ki.AddClause(new KeyInfoX509Data(cert));
+        signed.KeyInfo = ki;
+
+        signed.ComputeSignature();
+
+        var signature = signed.GetXml();
+
+        // assinatura deve ficar após infEvento
+        var infEvento = xml.GetElementsByTagName("infEvento")[0];
+        infEvento.ParentNode.InsertAfter(xml.ImportNode(signature, true), infEvento);
+    }
+
+
+    public async Task<(bool Success, bool TransportOk, string StatusCode, string StatusMessage, string ProtocolXml, string ProcXml)>
+        SendCancelEventAsync(XmlDocument envEventoXml, string ambiente, X509Certificate2 cert)
+    {
+        try
+        {
+            var client = SefazHttpPlatform.CreateClient(cert);
+
+            string baseUrl = ambiente == "1"
+                ? "https://www.nfce.fazenda.sp.gov.br"
+                : "https://homologacao.nfce.fazenda.sp.gov.br";
+
+            client.BaseAddress = new Uri(baseUrl);
+
+            // SOAP
+            string soap = BuildEventSoapEnvelope(envEventoXml.OuterXml);
+
+            var content = new StringContent(soap, Encoding.UTF8, "application/soap+xml");
+            content.Headers.ContentType = MediaTypeHeaderValue.Parse(
+                "application/soap+xml; charset=utf-8; action=\"http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/RecepcaoEvento\"");
+
+            // Envio
+            var resp = await client.PostAsync("/ws/NFeRecepcaoEvento4.asmx", content);
+            string respXml = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+                return (false, false, ((int)resp.StatusCode).ToString(), "Erro HTTP", null, null);
+
+            // Parse XML
+            var xml = new XmlDocument { PreserveWhitespace = true };
+            xml.LoadXml(respXml);
+
+            var ns = new XmlNamespaceManager(xml.NameTable);
+            ns.AddNamespace("soap", "http://www.w3.org/2003/05/soap-envelope");
+            ns.AddNamespace("nfe", "http://www.portalfiscal.inf.br/nfe");
+
+            var ret = xml.SelectSingleNode("//retEvento")
+                   ?? xml.SelectSingleNode("//nfe:retEvento", ns);
+
+            if (ret == null)
+                return (false, true, "SEM_RET", "retEvento não encontrado", null, null);
+
+            string cStat = ret.SelectSingleNode("infEvento/cStat")?.InnerText
+                        ?? ret.SelectSingleNode("nfe:infEvento/nfe:cStat", ns)?.InnerText;
+
+            string xMotivo = ret.SelectSingleNode("infEvento/xMotivo")?.InnerText
+                          ?? ret.SelectSingleNode("nfe:infEvento/nfe:xMotivo", ns)?.InnerText;
+
+            bool sucesso = cStat is "135" or "155"; // cancelamento homologado
+
+            return (sucesso, true, cStat, xMotivo, ret.OuterXml, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, false, "EXC", ex.Message, null, null);
+        }
+    }
+
+    private string BuildEventSoapEnvelope(string innerXml)
+    {
+        return $@"<soap:Envelope xmlns:soap=""http://www.w3.org/2003/05/soap-envelope""><soap:Body><nfeDadosMsg xmlns=""http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4"">{innerXml}</nfeDadosMsg></soap:Body></soap:Envelope>";
+    }
+
+
 }
-        
+
 

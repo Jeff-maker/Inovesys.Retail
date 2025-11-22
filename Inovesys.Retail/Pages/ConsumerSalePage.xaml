@@ -40,8 +40,9 @@
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
 
-            <MenuFlyoutItem Text="Imprimir"
-                    Clicked="OnPrinterClicked">
+            <MenuFlyoutItem x:Name="btnCancelInoviceClicked"
+                    Text="Finalizar venda (F4)"
+                    Clicked="OnCancelInoviceClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F4" />
                 </MenuFlyoutItem.KeyboardAccelerators>
@@ -76,9 +77,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Entry Grid.Row="0"        
+        <Entry Grid.Row="0" Grid.Column="0"        
             x:Name="entryCustomerCpf"
-            Grid.Column="0"
             Grid.ColumnSpan="3"
             Placeholder="CPF do consumidor"
             Keyboard="Numeric"
@@ -87,8 +87,7 @@
             Completed="OnCpfCompleted"
             HorizontalOptions="Center"/>
 
-        <Grid Grid.Row="1"
-              Grid.Column="0"
+        <Grid Grid.Row="1" Grid.Column="0"
               ColumnSpacing="0"
               Grid.ColumnSpan="3"
               ColumnDefinitions="4*,80"
@@ -121,7 +120,6 @@
                    Keyboard="Numeric"
                    HorizontalTextAlignment="Center"
                    Completed="OnProductCodeEntered"
-                   Focused="OnQuantityFocused"
                    HeightRequest="40"
                    WidthRequest="70"
                    VerticalOptions="Start" />
@@ -253,7 +251,7 @@
             </CollectionView>
         </Grid>
 
-        <StackLayout Grid.Row="2"  Grid.Column="0" 
+        <StackLayout Grid.Row="2" Grid.Column="0" 
                      HorizontalOptions="End" 
                      VerticalOptions="Center"
                      Grid.ColumnSpan="4" >
@@ -278,47 +276,38 @@
                     Margin="0,0,0,0"
                     VerticalOptions="Center"/>
             <Grid 
-                  Grid.ColumnSpan="3"
+                  Grid.ColumnSpan="4"
                   Margin="0,0,0,0"
-                  ColumnDefinitions="*,*,*"
+                  ColumnDefinitions="*,*,*,*"
                   VerticalOptions="Center">
 
                 <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Canc. Venda" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked" />
                 <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Canc. Item"  BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked" />
                 <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked" />
+                <Button Grid.Column="3" Style="{StaticResource FlexButton}" Text="Canc.Cupom" BackgroundColor="OrangeRed" TextColor="White"  Clicked="OnCancelInoviceClicked" />
+            
             </Grid>
 
-            <Grid 
-                          Grid.ColumnSpan="3"
-                          Margin="0,0,0,0"
-                          ColumnDefinitions="*,*,*"
-                          VerticalOptions="Center">
-
-                <Button Grid.Column="0"  Style="{StaticResource FlexButton}" Text="Canc.Cupom" BackgroundColor="OrangeRed" TextColor="White" Clicked="OnCancelInvoiceSefaz" />
-                <Button Grid.Column="1"  Style="{StaticResource FlexButton}" Text="Imprimir" BackgroundColor="Violet" TextColor="White" Clicked="OnPrinterClicked" />
-
+            <Grid Grid.ColumnSpan="3" Margin="0,0,0,0" ColumnDefinitions="*,*,*" VerticalOptions="Center">
+                
+                <!--<Button x:Name="btnPrint" 
+                        Grid.Column="1"  
+                        Style="{StaticResource FlexButton}" Text="Imprimir" BackgroundColor="Violet" TextColor="White" 
+                        Clicked="" />-->
             </Grid>
-
-
-
-
-
-
-
 
         </StackLayout>
-
-        <Grid 
-                Grid.Row="0"
-                Grid.RowSpan="99" 
-                Grid.Column="0"
-                Grid.ColumnSpan="99"
-                IsVisible="{Binding IsWorking}"
-                BackgroundColor="#66000000"
-                ZIndex="999"
-                InputTransparent="False"
-                VerticalOptions="Fill"
-                HorizontalOptions="Fill">
+        
+        <Grid Grid.Row="0"
+              Grid.RowSpan="99" 
+              Grid.Column="0"
+              Grid.ColumnSpan="99"
+              IsVisible="{Binding IsWorking}"
+              BackgroundColor="#66000000"
+              ZIndex="999"
+              InputTransparent="False"
+              VerticalOptions="Fill"
+              HorizontalOptions="Fill">
 
             <VerticalStackLayout VerticalOptions="Center"
                              HorizontalOptions="Center"

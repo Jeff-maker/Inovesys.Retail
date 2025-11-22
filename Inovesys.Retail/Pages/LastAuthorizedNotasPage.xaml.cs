@@ -25,7 +25,7 @@ public partial class LastAuthorizedNotasPage : ContentPage
     UserConfig _userConfig;
 
     // debounce token
-    private CancellationTokenSource? _searchCts;
+    private CancellationTokenSource _searchCts;
 
     public LastAuthorizedNotasPage(LiteDbService db, UserConfig userConfig)
     {
@@ -142,90 +142,6 @@ public partial class LastAuthorizedNotasPage : ContentPage
         entered = false;
     }
 
-    private void DebounceAndQuery(string? text)
-    {
-        _searchCts?.Cancel();
-        _searchCts = new CancellationTokenSource();
-        var token = _searchCts.Token;
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(300, token); // debounce 300ms
-                if (token.IsCancellationRequested) return;
-
-                // aqui chamamos a versão que faz query no DB
-                await QueryAndApplyAsync(text ?? string.Empty, token);
-            }
-            catch (TaskCanceledException) { /* cancelado */ }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Erro no debounce/query: {ex}");
-            }
-        }, token);
-    }
-
-    private void ApplyFilter(string query)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(query))
-            {
-                // sem filtro: mostra todos
-                _filteredInvoices = new List<Invoice>(_invoices);
-            }
-            else
-            {
-                var q = query.Trim();
-
-                // busca por Nfe (contains), Serie (contains) e InvoiceId (igual se número)
-                var list = _invoices.Where(i =>
-                    (!string.IsNullOrEmpty(i.Nfe) && i.Nfe.Contains(q, StringComparison.OrdinalIgnoreCase))
-                    || (!string.IsNullOrEmpty(i.Serie) && i.Serie.Contains(q, StringComparison.OrdinalIgnoreCase))
-                    || (int.TryParse(q, out var id) && i.InvoiceId == id)
-                ).ToList();
-
-                _filteredInvoices = list;
-            }
-
-            // atualiza a ItemsSource
-            NotasList.ItemsSource = _filteredInvoices;
-
-            // seleciona e foca o primeiro item, se houver
-            if (_filteredInvoices.Any())
-            {
-                var first = _filteredInvoices.First();
-                // usa Dispatcher + pequeno delay para garantir UI pronta
-                _ = Dispatcher.DispatchAsync(async () =>
-                {
-                    await Task.Delay(80);
-                    try
-                    {
-                        NotasList.SelectedItem = first;
-                        NotasList.ScrollTo(first, position: ScrollToPosition.Start, animate: true);
-
-                        // forçar highlight se necessário
-                        MainThread.BeginInvokeOnMainThread(() =>
-                        {
-                            NotasList.Focus();
-                            var sel = NotasList.SelectedItem;
-                            NotasList.SelectedItem = null;
-                            NotasList.SelectedItem = sel;
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Erro ao selecionar primeiro item após filtro: {ex}");
-                    }
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Erro ApplyFilter: {ex}");
-        }
-    }
 
     // ---------- resto do seu código (Loaded, KeyUp, OnNotaTapped, etc) ----------
     private void LastAuthorizedNotasView_Loaded(object? sender, EventArgs e)
@@ -294,20 +210,6 @@ public partial class LastAuthorizedNotasPage : ContentPage
             args.Handled = true;
             return;
         }
-
-        //// opcional: navegar com setas
-        //if (args.Keys == KeyboardKeys.ArrowDown)
-        //{
-        //    MoveSelection(1);
-        //    args.Handled = true;
-        //    return;
-        //}
-        //if (args.Keys == KeyboardKeys.ArrowUp)
-        //{
-        //    MoveSelection(-1);
-        //    args.Handled = true;
-        //    return;
-        //}
     }
 
 

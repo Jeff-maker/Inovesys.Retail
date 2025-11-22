@@ -10,12 +10,7 @@ namespace Inovesys.Retail;
 
 public static class SefazHttpPlatform
 {
-    private static readonly string[] AllowedHosts =
-    {
-        "homologacao.nfce.fazenda.sp.gov.br",
-        // "nfce.fazenda.sp.gov.br" // produção, se quiser
-    };
-
+   
     public static HttpClient CreateClient(X509Certificate2 cert)
     {
         if (cert is null || !cert.HasPrivateKey)
