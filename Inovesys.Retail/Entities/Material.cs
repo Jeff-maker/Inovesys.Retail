@@ -25,7 +25,7 @@ namespace Inovesys.Retail.Entities
         [BsonField("type")]
         public string Type { get; set; }
 
-        [JsonPropertyName("basicUnit")]
+        [JsonPropertyName("basicUnitId")]
         [BsonField("basic_unit")]
         public string BasicUnit { get; set; }
 

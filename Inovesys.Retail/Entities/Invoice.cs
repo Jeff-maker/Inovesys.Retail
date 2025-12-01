@@ -89,6 +89,9 @@ namespace Inovesys.Retail.Entities
         [BsonField("contingency")]
         public bool Contingency { get; set; }
 
+        [BsonField("canceled_xml")]
+        public string CanceledXml { get; set; }
+
 
     }
 }

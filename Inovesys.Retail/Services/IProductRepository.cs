@@ -230,26 +230,26 @@ namespace Inovesys.Retail.Services
                     }
                 }
 
-                // === Projeção final para DTO com preço/unidade ===
-                // ATENÇÃO: ajuste 'm.BaseUnit' para o nome correto no seu Material (ex.: MEINS/Unit/MeasureUnit).
-                string GetBaseUnit(Material m) => m.BasicUnit; // <-- ajuste aqui se necessário
 
                 var dtoList = new List<ProductSuggestion>(materialsFound.Count);
                 foreach (var m in materialsFound)
                 {
-                    var baseUnit = GetBaseUnit(m);
+                    var baseUnit = m.BasicUnit;
                     var (price, unit) = GetCurrentPriceForMaterialUnit(clientId, m.Id, baseUnit);
 
-                    dtoList.Add(new ProductSuggestion
+                    if (price is not null)
                     {
-                        Id = m.Id,
-                        Name = m.Name,
-                        Price = price,
-                        // se não houver preço vigente, usa a unidade base do material como fallback visual
-                        PriceUnit = unit ?? baseUnit
-                    });
+                        dtoList.Add(new ProductSuggestion
+                        {
+                            Id = m.Id,
+                            Name = m.Name,
+                            Price = price,
+                            // se não houver preço vigente, usa a unidade base do material como fallback visual
+                            PriceUnit = unit ?? baseUnit
+                        });
 
-                    if (dtoList.Count >= limit) break;
+                    }
+                    
                 }
 
                 return (IReadOnlyList<ProductSuggestion>)dtoList;
@@ -267,67 +267,72 @@ namespace Inovesys.Retail.Services
                 return (null, null);
 
             var priceCol = _db.GetCollection<MaterialPrice>("materialprice");
-            var now = DateTime.UtcNow; // ou DateTime.Now, conforme seu padrão
+
+            // DateTime em UTC, no mesmo "tipo" do que está no banco
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc);
 
             // 1) Tenta vigente COM unidade básica igual
             if (!string.IsNullOrWhiteSpace(baseUnit))
             {
-                var valid = priceCol.Query()
-                    .Where(@"($.client_id = @0)
-                     AND ($.material_id = @1)
-                     AND ($.material_unit = @2)
-                     AND ($.start_date <= @3)
-                     AND ($.end_date >= @3)",
-                           clientId, materialId, baseUnit, now)
-                    .OrderByDescending("$.start_date")
-                    .Limit(1)
-                    .ToList();
+                var valid = priceCol.Find(x =>
+                          x.ClientId == clientId &&
+                          x.MaterialId == materialId &&
+                          x.StartDate <= now &&
+                          x.EndDate >= now &&
+                          x.By == 1
+                          )
+                      .OrderByDescending(x => x.StartDate)
+                      .Take(1)
+                      .ToList();
+
+                // log só pra você ver o valor
+                System.Diagnostics.Debug.WriteLine($"now = {now:O} (Kind={now.Kind})");
 
                 if (valid.Count > 0)
                     return (valid[0].Price, valid[0].MaterialUnit);
             }
 
-            // 2) Se não achou vigente na unidade básica, tenta vigente em qualquer unidade
-            var anyValid = priceCol.Query()
-                .Where(@"($.client_id = @0)
-                 AND ($.material_id = @1)
-                 AND ($.start_date <= @2)
-                 AND ($.end_date >= @2)",
-                       clientId, materialId, now)
-                .OrderByDescending("$.start_date")
-                .Limit(1)
-                .ToList();
+            ////// 2) Se não achou vigente na unidade básica, tenta vigente em qualquer unidade
+            ////var anyValid = priceCol.Query()
+            ////    .Where(@"($.client_id = @0)
+            ////     AND ($.material_id = @1)
+            ////     AND ($.start_date <= @2)
+            ////     AND ($.end_date >= @2)",
+            ////           clientId, materialId, now)
+            ////    .OrderByDescending("$.start_date")
+            ////    .Limit(1)
+            ////    .ToList();
 
-            if (anyValid.Count > 0)
-                return (anyValid[0].Price, anyValid[0].MaterialUnit);
+            ////if (anyValid.Count > 0)
+            ////    return (anyValid[0].Price, anyValid[0].MaterialUnit);
 
-            // 3) Fallback: último preço (mais recente) na unidade básica
-            if (!string.IsNullOrWhiteSpace(baseUnit))
-            {
-                var latestSameUnit = priceCol.Query()
-                    .Where(@"($.client_id = @0)
-                     AND ($.material_id = @1)
-                     AND ($.material_unit = @2)",
-                           clientId, materialId, baseUnit)
-                    .OrderByDescending("$.start_date")
-                    .Limit(1)
-                    .ToList();
+            //// 3) Fallback: último preço (mais recente) na unidade básica
+            //if (!string.IsNullOrWhiteSpace(baseUnit))
+            //{
+            //    var latestSameUnit = priceCol.Query()
+            //        .Where(@"($.client_id = @0)
+            //         AND ($.material_id = @1)
+            //         AND ($.material_unit = @2)",
+            //               clientId, materialId, baseUnit)
+            //        .OrderByDescending("$.start_date")
+            //        .Limit(1)
+            //        .ToList();
 
-                if (latestSameUnit.Count > 0)
-                    return (latestSameUnit[0].Price, latestSameUnit[0].MaterialUnit);
-            }
+            //    if (latestSameUnit.Count > 0)
+            //        return (latestSameUnit[0].Price, latestSameUnit[0].MaterialUnit);
+            //}
 
-            // 4) Último preço em qualquer unidade (como último recurso)
-            var latestAny = priceCol.Query()
-                .Where(@"($.client_id = @0)
-                 AND ($.material_id = @1)",
-                       clientId, materialId)
-                .OrderByDescending("$.start_date")
-                .Limit(1)
-                .ToList();
+            //// 4) Último preço em qualquer unidade (como último recurso)
+            //var latestAny = priceCol.Query()
+            //    .Where(@"($.client_id = @0)
+            //     AND ($.material_id = @1)",
+            //           clientId, materialId)
+            //    .OrderByDescending("$.start_date")
+            //    .Limit(1)
+            //    .ToList();
 
-            if (latestAny.Count > 0)
-                return (latestAny[0].Price, latestAny[0].MaterialUnit);
+            //if (latestAny.Count > 0)
+            //    return (latestAny[0].Price, latestAny[0].MaterialUnit);
 
             return (null, null);
         }

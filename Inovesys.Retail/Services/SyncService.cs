@@ -4,6 +4,7 @@ using System;
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -15,11 +16,14 @@ public class SyncService
     private readonly HttpClient _http;
     private readonly LiteDbService _db;
     private const int PageSize = 100;
+    private readonly UserConfig _serConfig;
 
     public SyncService(IHttpClientFactory httpClientFactory, LiteDbService db)
     {
         _http = httpClientFactory.CreateClient("api"); // Usa o nome registrado no MauiProgram
         _db = db;
+        var col = _db.GetCollection<UserConfig>("user_config");
+        var settings = col.FindById("CURRENT") ?? new UserConfig();
     }
 
     public async Task SyncEntitiesAsync<T>(
@@ -63,6 +67,14 @@ public class SyncService
         while (!string.IsNullOrEmpty(url))
         {
             using var resp = await _http.GetAsync(url);
+
+            //using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            //req.Headers.Authorization =
+            //    new AuthenticationHeaderValue("Bearer", _client.Token); // ✅ SEMPRE AQUI
+
+            //using var resp = await _http.SendAsync(req);
+
+
             if (!resp.IsSuccessStatusCode)
             {
                 if (resp.StatusCode == HttpStatusCode.Unauthorized)
@@ -103,21 +115,18 @@ public class SyncService
             var next = odata.NextLink;
             if (string.IsNullOrWhiteSpace(next))
             {
-                url = null; // acabou
+                url = null; // acabou a paginação
+            }
+            else if (Uri.IsWellFormedUriString(next, UriKind.Absolute))
+            {
+                // ✅ já veio com https://...
+                url = next.Replace("http://", "https://");
             }
             else
             {
-                // Normaliza: se vier relativa, combine com o host do endpoint
-                if (Uri.IsWellFormedUriString(next, UriKind.Absolute))
-                {
-                    url = next;
-                }
-                else
-                {
-                    // Mantém o mesmo host/base do endpoint
-                    var baseUri = new Uri(endpoint, UriKind.Absolute);
-                    url = new Uri(baseUri, next).ToString();
-                }
+                // ✅ veio relativo: /odata/Products?$skip=50
+                var baseUri = new Uri(endpoint, UriKind.Absolute);
+                url = new Uri(baseUri, next).ToString();
             }
         }
 

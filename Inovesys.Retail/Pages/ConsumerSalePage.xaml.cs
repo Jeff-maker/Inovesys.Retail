@@ -75,8 +75,6 @@ public partial class ConsumerSalePage : ContentPage
 
     KeyboardBehavior _keyboardBehavior = new KeyboardBehavior();
 
-    
-
     public ConsumerSalePage(LiteDbService liteDatabase, ToastService toastService, IHttpClientFactory httpClientFactor, ProductRepositoryLiteDb products)
     {
         InitializeComponent();
@@ -218,91 +216,107 @@ public partial class ConsumerSalePage : ContentPage
 
     private void KeyUp(object sender, KeyPressedEventArgs args)
     {
-
-        if (args.Keys == KeyboardKeys.Return)
+        
+        try
         {
-
-            if( _enter)
-                return;
-
-            if (!suggestionList.IsVisible)
-                return;
-
-            // verifica se existe um item selecionado
-            if (suggestionList.SelectedItem is ProductSuggestion selected)
+            if (args.Keys == KeyboardKeys.Return)
             {
-                // seta o texto do entry ANTES de enviar
-                entryProductCode.Text = selected.Id?.ToString();   // ou selected.Name, depende da lógica
+
+                if (_enter)
+                    return;
+
+                if (!suggestionList.IsVisible)
+                    return;
+
+                // verifica se existe um item selecionado
+                if (suggestionList.SelectedItem is ProductSuggestion selected)
+                {
+                    // seta o texto do entry ANTES de enviar
+                    entryProductCode.Text = selected.Id?.ToString();   // ou selected.Name, depende da lógica
+                }
+
+                // agora executa seu método
+                OnProductCodeEntered(entryProductCode, EventArgs.Empty);
+
+                args.Handled = true;
             }
 
-            // agora executa seu método
-            OnProductCodeEntered(entryProductCode, EventArgs.Empty);
-
-            args.Handled = true;
         }
+        finally
+                {
+            // ✅ Libera a flag depois que o processamento termina
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+            });
+        }
+        
 
 
     }
-
 
     // Exemplo de handler: KeyDown
     private void OnKeyDown(object sender, KeyPressedEventArgs args)
     {
-        if (args.Keys == KeyboardKeys.DownArrow)
+        
+
+        try
         {
-            if (!entryProductCode.IsFocused)
-                return;
-
-            if (suggestionList.IsVisible && suggestionList.ItemsSource is IList<ProductSuggestion> items && items.Count > 0)
+            if (args.Keys == KeyboardKeys.DownArrow)
             {
-                _ignoreSelectionEvent = true; // 👈 bloqueia o evento temporariamente
+                if (!entryProductCode.IsFocused)
+                    return;
 
-                // Seleciona o primeiro item
-                suggestionList.SelectedItem = items[0];
-
-                // Garante que o item fique visível
-                suggestionList.ScrollTo(items[0], position: ScrollToPosition.Start, animate: false);
-
-                // Dá foco e força highlight na UI thread
-                MainThread.BeginInvokeOnMainThread(() =>
+                if (suggestionList.IsVisible &&
+                    suggestionList.ItemsSource is IList<ProductSuggestion> items &&
+                    items.Count > 0)
                 {
-                    suggestionList.Focus();
+                    _ignoreSelectionEvent = true;
 
-                    // Força atualização visual de seleção
-                    var selected = suggestionList.SelectedItem;
-                    suggestionList.SelectedItem = null;
-                    suggestionList.SelectedItem = selected;
+                    var first = items[0];
 
-                    _ignoreSelectionEvent = false; // 👈 reabilita o event
+                    suggestionList.SelectedItem = first;
+                    suggestionList.ScrollTo(first, position: ScrollToPosition.Start, animate: false);
 
-                });
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        suggestionList.Focus();
 
-                System.Diagnostics.Debug.WriteLine($"→ Foco movido para o primeiro item: {items[0].Name}");
+                        // força highlight visual
+                        var selected = suggestionList.SelectedItem;
+                        suggestionList.SelectedItem = null;
+                        suggestionList.SelectedItem = selected;
+
+                        _ignoreSelectionEvent = false;
+                    });
+
+                    System.Diagnostics.Debug.WriteLine($"→ Seta ativa: {first.Name}");
+                }
             }
-            else
+
+            if (args.Keys == KeyboardKeys.Escape)
             {
-                System.Diagnostics.Debug.WriteLine("Lista não visível ou sem itens.");
+                if (suggestionList.IsVisible)
+                {
+                    suggestionList.IsVisible = false;
+
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        entryProductCode.Focus();
+                    });
+
+                    args.Handled = true;
+                }
             }
         }
-
-        if (args.Keys == KeyboardKeys.Escape)
+        finally
         {
-            // Se a lista está visível, pode esconder (opcional)
-            if (suggestionList.IsVisible)
+            // ✅ Libera a flag depois que o processamento termina
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                suggestionList.IsVisible = false;
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    // Remove o foco da lista forçando o entry receber foco
-                    entryProductCode.Focus();
-                });
-
-                args.Handled = true;
-                return;
-            }
+            });
         }
-
     }
+
 
 
     private async Task<(bool Success, string QrCode, bool TransportOk, string StatusCode, string msg)> EnviarNotaParaSefaz(Invoice invoice)
@@ -1786,14 +1800,7 @@ public partial class ConsumerSalePage : ContentPage
         suggestionList.IsVisible = results.Any();
     }
 
-    private void OnSuggestionSelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (_ignoreSelectionEvent)
-            return;
-        if (e.CurrentSelection.FirstOrDefault() is ProductSuggestion selected)
-        {
-        }
-    }
+
 
     private void OnItemDoubleTapped(object sender, TappedEventArgs e)
     {
@@ -1850,7 +1857,7 @@ public partial class ConsumerSalePage : ContentPage
         }
     }
 
-    private void OnPrinterClicked(object sender, EventArgs e)
+    private async void OnPrinterClicked(object sender, EventArgs e)
     {
         var page = new LastAuthorizedNotasPage(_db, userConfig);
 
@@ -1873,115 +1880,6 @@ public partial class ConsumerSalePage : ContentPage
             }
         };
 
-
-        // ESCUTAR QUANDO FECHAR
-        page.PageClosed += () =>
-        {
-            // após a impressão, fecha a página (volta)
-            Navigation.PopAsync();
-        };
-
-        Navigation.PushAsync(page);
-    }
-
-
-    private async void OnCancelInoviceClicked(object sender, EventArgs e)
-    {
-
-        var page = new LastAuthorizedNotasPage(_db, userConfig);
-
-        // quando o usuário selecionar a nota, continua o fluxo
-        page.NotaSelecionada += async (nota) =>
-        {
-            if (nota != null)
-            {
-                nota.Items = _db.GetCollection<InvoiceItem>("invoiceitem")
-                    .Find(i => i.ClientId == nota.ClientId && i.InvoiceId == nota.InvoiceId).ToList();
-
-
-                bool ok = await DisplayAlert(
-                            "Atenção",
-                            "Confirma o cancelamento do Cupom Fiscal?",
-                            "Sim",
-                            "Não"
-                        );
-
-                if (ok)
-                {
-
-                    var sefazService = new SefazService(_db, _company, _branche);
-
-                    // 1) montar XML cancelamento
-                    var build = sefazService.BuildCancelEventXml(
-                            chaveNFe: nota.NfKey,
-                            protocoloAutorizacao: nota.Protocol,
-                            justificativa: "Cancelamento solicitado pelo cliente.",
-                            ambiente: _client.EnvironmentSefaz,
-                            cert: _x509Certificate2);
-
-                    if (build.Error != null)
-                    {
-                        await DisplayAlert("Erro", build.Error.Message, "OK");
-                        return;
-                    }
-
-                    // 2) enviar para SEFAZ
-                    var cancel = await sefazService.SendCancelEventAsync(build.Xml, _client.EnvironmentSefaz, _x509Certificate2);
-
-                    if (cancel.Success)
-                    {
-                        nota.NfeStatus = "CANCELADA";
-                        _db.GetCollection<Invoice>("invoice").Update(nota);
-
-                        await DisplayAlert("OK", "Cupom cancelado com sucesso!", "OK");
-                    }
-                    else
-                    {
-                        await DisplayAlert("Erro", $"{cancel.StatusCode}: {cancel.StatusMessage}", "OK");
-                    }
-                }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                {
-
-                }
-
-                await Navigation.PopAsync();
-
-            }
-        };
-
-
         // ESCUTAR QUANDO FECHAR
         page.PageClosed += () =>
         {
@@ -1990,9 +1888,110 @@ public partial class ConsumerSalePage : ContentPage
         };
 
         await Navigation.PushAsync(page);
-
-
     }
+
+    private async void OnCancelInoviceClicked(object sender, EventArgs e)
+    {
+        var page = new LastAuthorizedNotasPage(_db, userConfig);
+
+        page.NotaSelecionada += async (nota) =>
+        {
+            if (nota == null)
+                return;
+
+            nota.Items = _db.GetCollection<InvoiceItem>("invoiceitem")
+                .Find(i => i.ClientId == nota.ClientId && i.InvoiceId == nota.InvoiceId)
+                .ToList();
+
+            // ✅ Bloqueia se já estiver cancelada
+            if (!string.IsNullOrWhiteSpace(nota.NfeStatus) &&
+                nota.NfeStatus.Trim().Equals("CANCELADA", StringComparison.OrdinalIgnoreCase))
+            {
+                await DisplayAlert("Erro", "Cupom já cancelado", "OK");
+                return; // NÃO FECHA
+            }
+
+            bool ok = await DisplayAlert(
+                "Atenção",
+                "Confirma o cancelamento do Cupom Fiscal?",
+                "Sim",
+                "Não"
+            );
+
+            if (!ok)
+                return; // usuário desistiu → NÃO FECHA
+
+            var sefazService = new SefazService(_db, _company, _branche);
+
+            var build = sefazService.BuildCancelEventXml(
+                chaveNFe: nota.NfKey,
+                protocoloAutorizacao: nota.Protocol,
+                justificativa: "Cancelamento solicitado pelo cliente.",
+                ambiente: _client.EnvironmentSefaz,
+                cert: _x509Certificate2);
+
+            if (build.Error != null)
+            {
+                await DisplayAlert("Erro", build.Error.Message, "OK");
+                return; // NÃO FECHA
+            }
+
+            var cancel = await sefazService.SendCancelEventAsync(
+                build.Xml,
+                _client.EnvironmentSefaz,
+                _x509Certificate2);
+
+            if (cancel.Success)
+            {
+                nota.NfeStatus = "CANCELADA";
+                nota.CanceledXml = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes(cancel.ProtocolXml));
+
+                _db.GetCollection<Invoice>("invoice").Update(nota);
+
+                await DisplayAlert("OK", "Cupom cancelado com sucesso!", "OK");
+
+                // ✅ AGORA SIM FECHA A TELA
+                await Navigation.PopAsync();
+            }
+            else
+            {
+                await DisplayAlert("Erro", $"{cancel.StatusCode}: {cancel.StatusMessage}", "OK");
+                // ❌ NÃO FECHA
+            }
+        };
+
+        // ❌ REMOVER este trecho, pois ele fecha a tela mesmo em erro
+        /*
+        page.PageClosed += () =>
+        {
+            Navigation.PopAsync();
+        };
+        */
+
+        await Navigation.PushAsync(page);
+    }
+
+
+    private void OnSuggestionTapped(object sender, TappedEventArgs e)
+    {
+        if (sender is not Border border)
+            return;
+
+        if (border.BindingContext is not ProductSuggestion selected)
+            return;
+
+        // 🔹 Aqui entra exatamente a lógica que você queria:
+        System.Diagnostics.Debug.WriteLine($"[Seleção] {selected.Name} ({selected.Id})");
+
+        // Aqui você trata como “confirmar produto”
+        entryProductCode.Text = selected.Id;
+        suggestionList.IsVisible = false;
+
+        // Se você tiver essa lógica pronta, pode chamar:
+        OnProductCodeEntered(entryProductCode, EventArgs.Empty);
+    }
+
 }
 
 

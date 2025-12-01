@@ -40,7 +40,7 @@ public partial class LastAuthorizedNotasPage : ContentPage
                 i.CompanyId == userConfig.DefaultCompanyId &&
                 i.BrancheId == userConfig.DefaultBranche)
             .OrderByDescending(i => i.AuthorizationDate ?? i.IssueDate)
-            .Take(10)
+            .Take(50)
             .ToList();
 
         // inicialmente os filtrados são todos

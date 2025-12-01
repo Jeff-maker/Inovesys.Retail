@@ -8,7 +8,7 @@
         <MenuBarItem Text="Venda Consumidor">
 
             <MenuFlyoutItem x:Name="miCancelarItem"
-                    Text="Cancelar produto (F2)"
+                    Text="Cancelar produto"
                     Clicked="OnCancelItemClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F2" />
@@ -16,16 +16,23 @@
             </MenuFlyoutItem>
 
             <MenuFlyoutItem x:Name="miEditQu"
-                       Text="Editar Quantidade(F3)"
+                       Text="Editar Quantidade"
                        Clicked="OnEditQuant">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F3" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
 
+            <MenuFlyoutItem x:Name="btnOnPrinterClicked"
+                     Text="Reimprimir"
+                     Clicked="OnPrinterClicked">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F4" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
 
             <MenuFlyoutItem x:Name="miFinalizar"
-                        Text="Finalizar venda (F6)"
+                        Text="Finalizar venda"
                         Clicked="OnFinalizeSaleClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F6" />
@@ -33,21 +40,19 @@
             </MenuFlyoutItem>
 
             <MenuFlyoutItem x:Name="miCancelar"
-              Text="Cancela venda (F8)"
+              Text="Cancela venda"
                     Clicked="OnCancelSaleClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="F8" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-
-            <MenuFlyoutItem x:Name="btnCancelInoviceClicked"
-                    Text="Finalizar venda (F4)"
-                    Clicked="OnCancelInoviceClicked">
+            <MenuFlyoutItem x:Name="btnOnCancelInvoiceClicked"
+                Text="Cancelar Cupom"
+                        Clicked="OnCancelInoviceClicked">
                 <MenuFlyoutItem.KeyboardAccelerators>
-                    <KeyboardAccelerator Key="F4" />
+                    <KeyboardAccelerator Key="F9" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-
         </MenuBarItem>
     </ContentPage.MenuBarItems>
 
@@ -142,8 +147,8 @@
                     <DataTemplate x:DataType="models:ConsumerSaleItem">
                         <Border  StrokeThickness="2"
                                  Stroke="#90A4AE"
-                                 StrokeShape="RoundRectangle 10"
-                                 BackgroundColor="#000080"
+                                 StrokeShape="RoundRectangle 15"
+                                 BackgroundColor="#0D47A1"
                                  Padding="5"
                                  Margin="0">
                             <Grid Padding="4"
@@ -215,15 +220,20 @@
                     VerticalOptions="Start"
                     BackgroundColor="White"
                     Margin="0,10,0,0"        
-                    VisualElement.ZIndex="100" >
+                    VisualElement.ZIndex="100">
                 <CollectionView.ItemTemplate>
                     <DataTemplate>
                         <!-- dê um x:Name ao Border se quiser usar TargetName nos Setters -->
                         <Border x:Name="itemBorder"
-                        StrokeThickness="0"
-                        Padding="0"
-                        Background="Transparent"
-                        StrokeShape="RoundRectangle 10">
+                                StrokeThickness="0"
+                                Padding="0"
+                                Background="Transparent"
+                                StrokeShape="RoundRectangle 10">
+
+
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnSuggestionTapped" />
+                            </Border.GestureRecognizers>
 
                             <!-- VisualStateManager no elemento raiz do template -->
                             <VisualStateManager.VisualStateGroups>
@@ -257,7 +267,7 @@
                      Grid.ColumnSpan="4" >
             <Label x:Name="lblTotal"
                       Text="Total: R$ 0,00"
-                      FontSize="28"
+                      FontSize="32"
                       FontAttributes="Bold"
                       HorizontalOptions="End"
                       VerticalOptions="End"
@@ -266,30 +276,69 @@
 
         <StackLayout Grid.Row="3"  Grid.Column="0" 
                      HorizontalOptions="Center" 
-                     Grid.ColumnSpan="4">
+                     Grid.ColumnSpan="3">
             <Label 
                     Grid.Column="0"
-                    Grid.ColumnSpan="3" 
-                    Text="(F2 Cancelar item) (F3 Alterar quantidade) F4 (Imprimir) (F6 Finaliza) (F8 Cancelar venda) " 
-                    FontSize="15"
-                    
+                    Grid.ColumnSpan="3"
+                    Text="(F2) Cancelar item   (F3) Alterar quantidade   (F4) Reimprimir   (F6) Finalizar venda   (F8) Cancelar venda   (F9) Cancelar cupom"
+                    FontSize="12"
                     Margin="0,0,0,0"
                     VerticalOptions="Center"/>
             <Grid 
                   Grid.ColumnSpan="4"
                   Margin="0,0,0,0"
-                  ColumnDefinitions="*,*,*,*"
+                  ColumnDefinitions="*,*,*"
+                    RowDefinitions="*,*"
                   VerticalOptions="Center">
 
-                <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Canc. Venda" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked" />
-                <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Canc. Item"  BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked" />
-                <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked" />
-                <Button Grid.Column="3" Style="{StaticResource FlexButton}" Text="Canc.Cupom" BackgroundColor="OrangeRed" TextColor="White"  Clicked="OnCancelInoviceClicked" />
-            
+                <Button Grid.Column="0" Style="{StaticResource FlexButton}" Text="Canc. Venda" BackgroundColor="Red" TextColor="White" Clicked="OnCancelSaleClicked">
+                    <Button.Shadow>
+                        <Shadow Brush="#80000000"
+                             Offset="2,4"
+                             Radius="8"
+                             Opacity="0.6" />   
+                    </Button.Shadow>
+                </Button>
+                <Button Grid.Column="1" Style="{StaticResource FlexButton}" Text="Canc. Item"  BackgroundColor="Yellow" TextColor="Black" Clicked="OnCancelItemClicked">
+                    <Button.Shadow>
+                        <Shadow Brush="#80000000"
+                             Offset="2,4"
+                             Radius="8"
+                             Opacity="0.45" />   
+                    </Button.Shadow>
+                </Button>
+
+
+                <Button Grid.Column="2" Style="{StaticResource FlexButton}" Text="Finalizar" BackgroundColor="Green" TextColor="White" Clicked="OnFinalizeSaleClicked">
+                    <Button.Shadow>
+                        <Shadow Brush="#80000000"
+                            Offset="2,4"
+                            Radius="8"
+                            Opacity="0.6" />    
+                    </Button.Shadow>
+
+                </Button>
+                <Button Grid.Column="0" Grid.Row="1"  Style="{StaticResource FlexButton}" Text="Reimprimir" BackgroundColor="Blue" TextColor="White"  Clicked="OnPrinterClicked">
+                    <Button.Shadow>
+                        <Shadow Brush="#80000000"
+                         Offset="2,4"
+                         Radius="8"
+                         Opacity="0.6" />   
+                    </Button.Shadow>
+                </Button>
+                <Button Grid.Column="1" Grid.Row="1"  Style="{StaticResource FlexButton}" Text="Canc.Cupom" BackgroundColor="OrangeRed" TextColor="White"  Clicked="OnCancelInoviceClicked" >
+                    <Button.Shadow>
+                        <Shadow Brush="#80000000"
+                         Offset="2,4"
+                         Radius="8"
+                         Opacity="0.6" />
+                    </Button.Shadow>
+                </Button>
+
             </Grid>
 
             <Grid Grid.ColumnSpan="3" Margin="0,0,0,0" ColumnDefinitions="*,*,*" VerticalOptions="Center">
-                
+
                 <!--<Button x:Name="btnPrint" 
                         Grid.Column="1"  
                         Style="{StaticResource FlexButton}" Text="Imprimir" BackgroundColor="Violet" TextColor="White" 
@@ -297,7 +346,7 @@
             </Grid>
 
         </StackLayout>
-        
+
         <Grid Grid.Row="0"
               Grid.RowSpan="99" 
               Grid.Column="0"

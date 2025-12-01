@@ -285,15 +285,12 @@ public class SefazService
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Gera e assina o XML de cancelamento (envEvento) da NF-e.
-    /// </summary>
     public (XmlDocument Xml, string IdEvento, Exception Error) BuildCancelEventXml(
-        string chaveNFe,
-        string protocoloAutorizacao,
-        string justificativa,
-        string ambiente, // "1" Prod / "2" Homolog
-        X509Certificate2 cert)
+    string chaveNFe,
+    string protocoloAutorizacao,
+    string justificativa,
+    string ambiente, // "1" Prod / "2" Homolog
+    X509Certificate2 cert)
     {
         try
         {
@@ -309,47 +306,120 @@ public class SefazService
             var xml = new XmlDocument { PreserveWhitespace = true };
             const string ns = "http://www.portalfiscal.inf.br/nfe";
 
-            var envEvento = xml.CreateElement("envEvento", ns);
-            envEvento.SetAttribute("versao", "1.00");
-
-            envEvento.AppendChild(CreateElem(xml, ns, "idLote", DateTime.Now.ToString("yyyyMMddHHmmss")));
-
-            var evento = xml.CreateElement("evento", ns);
-            evento.SetAttribute("versao", "1.00");
-            envEvento.AppendChild(evento);
-
             string tpEvento = "110111"; // CANCELAMENTO
             string idEvento = "ID" + tpEvento + chaveNFe + "01"; // nSeqEvento = 1
 
-            var infEvento = xml.CreateElement("infEvento", ns);
-            infEvento.SetAttribute("Id", idEvento);
+            // =========================
+            // <envEvento xmlns="..." versao="1.00">
+            // =========================
+            var envEvento = xml.CreateElement("envEvento");
+
+            var attrXmlnsEnv = xml.CreateAttribute("xmlns");
+            attrXmlnsEnv.Value = ns;
+            envEvento.Attributes.Append(attrXmlnsEnv);      // primeiro xmlns
+
+            var attrVersaoEnv = xml.CreateAttribute("versao");
+            attrVersaoEnv.Value = "1.00";
+            envEvento.Attributes.Append(attrVersaoEnv);     // depois versao
+
+            // <idLote>1</idLote>
+            var idLoteElem = xml.CreateElement("idLote");
+            idLoteElem.InnerText = "1";
+            envEvento.AppendChild(idLoteElem);
+
+            // =========================
+            // <evento xmlns="..." versao="1.00">
+            // =========================
+            var evento = xml.CreateElement("evento");
+
+            var attrXmlnsEvento = xml.CreateAttribute("xmlns");
+            attrXmlnsEvento.Value = ns;
+            evento.Attributes.Append(attrXmlnsEvento);
+
+            var attrVersaoEvento = xml.CreateAttribute("versao");
+            attrVersaoEvento.Value = "1.00";
+            evento.Attributes.Append(attrVersaoEvento);
+
+            envEvento.AppendChild(evento);
+
+            // =========================
+            // <infEvento Id="...">
+            // =========================
+            var infEvento = xml.CreateElement("infEvento");
+            var attrId = xml.CreateAttribute("Id");
+            attrId.Value = idEvento;
+            infEvento.Attributes.Append(attrId);
 
             evento.AppendChild(infEvento);
 
-            infEvento.AppendChild(CreateElem(xml, ns, "cOrgao", chaveNFe.Substring(0, 2)));
-            infEvento.AppendChild(CreateElem(xml, ns, "tpAmb", ambiente));
-            infEvento.AppendChild(CreateElem(xml, ns, "CNPJ", _branche.Cnpj.Replace(".", "").Replace("/", "").Replace("-", "")));
-            infEvento.AppendChild(CreateElem(xml, ns, "chNFe", chaveNFe));
-            infEvento.AppendChild(CreateElem(xml, ns, "dhEvento", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:sszzz")));
-            infEvento.AppendChild(CreateElem(xml, ns, "tpEvento", tpEvento));
-            infEvento.AppendChild(CreateElem(xml, ns, "nSeqEvento", "1"));
-            infEvento.AppendChild(CreateElem(xml, ns, "verEvento", "1.00"));
+            // Helpers locais pra evitar usar o CreateElem antigo
+            XmlElement Elem(string name, string value)
+            {
+                var e = xml.CreateElement(name);
+                e.InnerText = value;
+                return e;
+            }
 
-            var det = xml.CreateElement("detEvento", ns);
-            det.SetAttribute("versao", "1.00");
+            infEvento.AppendChild(Elem("cOrgao", chaveNFe.Substring(0, 2)));
+            infEvento.AppendChild(Elem("tpAmb", ambiente));
+            infEvento.AppendChild(Elem("CNPJ", _branche.Cnpj.Replace(".", "").Replace("/", "").Replace("-", "")));
+            infEvento.AppendChild(Elem("chNFe", chaveNFe));
+            infEvento.AppendChild(Elem("dhEvento", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:sszzz")));
+            infEvento.AppendChild(Elem("tpEvento", tpEvento));
+            infEvento.AppendChild(Elem("nSeqEvento", "1"));
+            infEvento.AppendChild(Elem("verEvento", "1.00"));
 
-            det.AppendChild(CreateElem(xml, ns, "descEvento", "Cancelamento"));
-            det.AppendChild(CreateElem(xml, ns, "nProt", protocoloAutorizacao));
-            det.AppendChild(CreateElem(xml, ns, "xJust", justificativa));
+            // =========================
+            // <detEvento versao="1.00">
+            // =========================
+            var det = xml.CreateElement("detEvento");
+            var attrVersaoDet = xml.CreateAttribute("versao");
+            attrVersaoDet.Value = "1.00";
+            det.Attributes.Append(attrVersaoDet);
+
+            det.AppendChild(Elem("descEvento", "Cancelamento"));
+            det.AppendChild(Elem("nProt", protocoloAutorizacao));
+            det.AppendChild(Elem("xJust", justificativa));
 
             infEvento.AppendChild(det);
 
+            // raiz
             xml.AppendChild(envEvento);
 
-            // ASSINAR
-            SignXml(xml, idEvento, cert);
+            // carregar em novo XmlDocument para assinar (mantendo preserve whitespace)
+            var xmlSemIdentacao = new XmlDocument { PreserveWhitespace = true };
+            xmlSemIdentacao.LoadXml(xml.InnerXml);
 
-            return (xml, idEvento, null);
+            // ASSINAR (sua implementação atual de assinatura)
+            SignXml(xmlSemIdentacao, idEvento, cert);
+
+            // --- Mover <Signature> para logo após </infEvento> ---
+            var dsNs = "http://www.w3.org/2000/09/xmldsig#";
+            var signatures = xmlSemIdentacao.GetElementsByTagName("Signature", dsNs);
+            if (signatures != null && signatures.Count > 0)
+            {
+                var signatureNode = signatures[0];
+
+                // agora buscamos por nome, sem namespace, já que criamos sem ns no DOM
+                var eventoNodes = xmlSemIdentacao.GetElementsByTagName("evento");
+                var infEventoNodes = xmlSemIdentacao.GetElementsByTagName("infEvento");
+
+                if (eventoNodes.Count > 0 && infEventoNodes.Count > 0)
+                {
+                    var eventoNode = eventoNodes[0];
+                    var infEventoNode = infEventoNodes[0];
+
+                    if (signatureNode.ParentNode != null)
+                        signatureNode.ParentNode.RemoveChild(signatureNode);
+
+                    if (infEventoNode.NextSibling != null)
+                        eventoNode.InsertAfter(signatureNode, infEventoNode);
+                    else
+                        eventoNode.AppendChild(signatureNode);
+                }
+            }
+
+            return (xmlSemIdentacao, idEvento, null);
         }
         catch (Exception ex)
         {
@@ -357,37 +427,62 @@ public class SefazService
         }
     }
 
-    private XmlElement CreateElem(XmlDocument xml, string ns, string name, string value)
-    {
-        var e = xml.CreateElement(name, ns);
-        e.InnerText = value ?? "";
-        return e;
-    }
 
     private void SignXml(XmlDocument xml, string referenceId, X509Certificate2 cert)
     {
-        var signed = new SignedXml(xml);
-        signed.SigningKey = cert.GetRSAPrivateKey();
+        if (xml == null)
+            throw new ArgumentNullException(nameof(xml));
+        if (cert == null)
+            throw new ArgumentNullException(nameof(cert));
 
-        var reference = new Reference("#" + referenceId);
+        var rsa = cert.GetRSAPrivateKey();
+        if (rsa == null)
+            throw new Exception("Certificado não possui chave privada.");
+
+        var signed = new SignedXml(xml)
+        {
+            SigningKey = rsa
+        };
+
+        // <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315">
+        signed.SignedInfo.CanonicalizationMethod = SignedXml.XmlDsigC14NTransformUrl;
+
+        // <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1">
+        signed.SignedInfo.SignatureMethod = SignedXml.XmlDsigRSASHA1Url;
+
+        // Referência ao Id do infEvento
+        var reference = new Reference("#" + referenceId)
+        {
+            // <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1">
+            DigestMethod = SignedXml.XmlDsigSHA1Url
+        };
+
+        // <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" />
         reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
+
+        // <Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315" />
         reference.AddTransform(new XmlDsigC14NTransform());
 
         signed.AddReference(reference);
 
+        // <KeyInfo><X509Data><X509Certificate>...</X509Certificate></X509Data></KeyInfo>
         var ki = new KeyInfo();
         ki.AddClause(new KeyInfoX509Data(cert));
         signed.KeyInfo = ki;
 
+        // calcula assinatura
         signed.ComputeSignature();
 
         var signature = signed.GetXml();
 
-        // assinatura deve ficar após infEvento
-        var infEvento = xml.GetElementsByTagName("infEvento")[0];
-        infEvento.ParentNode.InsertAfter(xml.ImportNode(signature, true), infEvento);
-    }
+        // Anexa dentro de <infEvento> (depois você já tem a rotina que move para depois)
+        var infEvento = xml.GetElementsByTagName("infEvento")[0] as XmlElement;
+        if (infEvento == null)
+            throw new InvalidOperationException("Elemento <infEvento> não encontrado no XML.");
 
+        var importedSignature = xml.ImportNode(signature, true);
+        infEvento.AppendChild(importedSignature);
+    }
 
     public async Task<(bool Success, bool TransportOk, string StatusCode, string StatusMessage, string ProtocolXml, string ProcXml)>
         SendCancelEventAsync(XmlDocument envEventoXml, string ambiente, X509Certificate2 cert)

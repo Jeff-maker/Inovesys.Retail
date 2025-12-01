@@ -6,8 +6,8 @@
 
     <!-- GRID PRINCIPAL -->
     <Grid BackgroundColor="White"
-          Padding="18"
-          RowDefinitions="Auto,*,Auto">
+          Padding="10"
+          RowDefinitions="Auto,Auto,*">
 
         <!-- CABEÇALHO + PESQUISA -->
         <VerticalStackLayout Grid.Row="0" Spacing="10">
@@ -22,8 +22,38 @@
                        TextChanged="OnSearchTextChanged" />
         </VerticalStackLayout>
 
-        <!-- LISTA (OCUPA 80% APROX.) -->
-        <CollectionView Grid.Row="1"
+        <!-- CABEÇALHO DAS COLUNAS -->
+        <Grid Grid.Row="1"
+              ColumnDefinitions="2*,1.2*,1*,1.1*"
+              Padding="8"
+              BackgroundColor="#E0E0E0">
+
+            <Label Grid.Column="0"
+                   Text="NF"
+                   FontAttributes="Bold"
+                   FontSize="12" />
+
+            <Label Grid.Column="1"
+                   Text="Data"
+                   FontAttributes="Bold"
+                   FontSize="12"
+                   HorizontalTextAlignment="Center" />
+
+            <Label Grid.Column="2"
+                   Text="Valor"
+                   FontAttributes="Bold"
+                   FontSize="12"
+                   HorizontalTextAlignment="End" />
+
+            <Label Grid.Column="3"
+                   Text="Status"
+                   FontAttributes="Bold"
+                   FontSize="12"
+                   HorizontalTextAlignment="Center" />
+        </Grid>
+
+        <!-- LISTA -->
+        <CollectionView Grid.Row="2"
                         x:Name="NotasList"
                         SelectionMode="Single"
                         VerticalOptions="Fill"
@@ -39,11 +69,48 @@
                             <TapGestureRecognizer Tapped="OnNotaTapped" />
                         </Border.GestureRecognizers>
 
-                        <VerticalStackLayout>
-                            <Label Text="{Binding Nfe}" FontAttributes="Bold" />
-                            <Label Text="{Binding AuthorizationDate}" FontSize="12" />
-                            <Label Text="{Binding TotalAmount, StringFormat='R${0:N2}'}" FontSize="12" />
-                        </VerticalStackLayout>
+                        <!-- GRID COM COLUNAS -->
+                        <Grid ColumnDefinitions="2*,1.2*,1*,1.1*">
+
+
+                            <Grid.Triggers>
+                                <DataTrigger TargetType="Grid"
+                                     Binding="{Binding NfeStatus}"
+                                     Value="CANCELADA">
+                                                    <Setter Property="BackgroundColor" Value="#E57373"/>
+                                                </DataTrigger>
+                                            </Grid.Triggers>
+
+
+                            <!-- Coluna 1 - NF -->
+                            <Label Grid.Column="0"
+                                   Text="{Binding Nfe}"
+                                   FontAttributes="Bold"
+                                   VerticalTextAlignment="Center" />
+
+                            <!-- Coluna 2 - Data -->
+                            <Label Grid.Column="1"
+                                   Text="{Binding AuthorizationDate}"
+                                   FontSize="12"
+                                   HorizontalTextAlignment="Center"
+                                   VerticalTextAlignment="Center" />
+
+                            <!-- Coluna 3 - Valor -->
+                            <Label Grid.Column="2"
+                                   Text="{Binding TotalAmount, StringFormat='R$ {0:N2}'}"
+                                   FontSize="12"
+                                   HorizontalTextAlignment="End"
+                                   VerticalTextAlignment="Center" />
+
+                            <!-- ✅ Coluna 4 - Status -->
+                            <Label Grid.Column="3"
+                                   Text="{Binding NfeStatus}"
+                                   FontSize="12"
+                                   FontAttributes="Bold"
+                                   HorizontalTextAlignment="Center"
+                                   VerticalTextAlignment="Center" />
+
+                        </Grid>
 
                     </Border>
                 </DataTemplate>
@@ -51,15 +118,15 @@
 
         </CollectionView>
 
-        <!-- BOTÃO FECHAR NO RODAPÉ À DIREITA -->
-        <Button Grid.Row="2"
+        <!-- BOTÃO FECHAR --><!--
+        <Button Grid.Row="3"
                 Text="Fechar"
                 BackgroundColor="Red"
                 CornerRadius="8"
                 Padding="14,8"
                 HorizontalOptions="End"
                 VerticalOptions="End"
-                Clicked="OnCloseClicked"/>
+                Clicked="OnCloseClicked"/>-->
     </Grid>
 
 </ContentPage>
