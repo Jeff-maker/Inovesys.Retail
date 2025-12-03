@@ -197,6 +197,53 @@ public partial class ConsumerSalePage : ContentPage
             }
         }
 
+        // ✅ Verifica se há notas fiscais pendentes de envio
+        invoiceCol = _db.GetCollection<Invoice>("invoice");
+        hasPendingInvoice = invoiceCol.Exists(i =>
+            i.ClientId == _branche.ClientId &&
+            i.CompanyId == _branche.CompanyId &&
+            i.BrancheId == _branche.Id &&
+            i.NfeStatus == "CANCELADA" &&
+            i.SendCancel == false );
+
+
+
+        if (hasPendingInvoice)
+        {
+
+            bool enviarAgora = await DisplayAlert(
+                       "Nota fiscal pendente",
+                       "Há nota(s) fiscal(is) pendente(s) de envio para o backoffice.\nDeseja enviar agora?",
+                       "Sim", "Não");
+
+            if (enviarAgora)
+            {
+                // ⚠️ Aqui você pode chamar o serviço de envio, ex:
+                var pendente = invoiceCol.FindOne(i =>
+                    i.ClientId == _branche.ClientId &&
+                    i.CompanyId == _branche.CompanyId &&
+                    i.BrancheId == _branche.Id &&
+                    i.NfeStatus == "CANCELADA" &&
+                    i.SendCancel == false);
+
+                if (pendente != null)
+                {
+                    // Exemplo: chamar método fictício de envio
+                    var ok = await SendInvoiceCancelToBackofficeAsync(  pendente.InvoiceBackEndId , new BackofficeInvoiceCancelRequest { CancelXml = pendente.CanceledXml , Protocol = pendente.Protocol , Reason = ""  }  );
+                    if (ok)
+                    {
+                        var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+                        pendente.SendCancel = true;
+                        invoiceCollection.Update(pendente);
+                        await _toastService.ShowToastAsync("Nota enviada com sucesso.");
+                    }
+                    else
+                        await _toastService.ShowToastAsync("Falha ao enviar nota.");
+                }
+            }
+        }
+
+
         await CheckAndSendContingencyAsync();   // <— novo
         await CheckAndSendAuthorizedInvoicesAsync();
 
@@ -754,23 +801,24 @@ public partial class ConsumerSalePage : ContentPage
             {
 
                 Task printed = ImprimirCupomViaEscPosAsync(invoice: post.Invoice, send.QrCode);
+                var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 await printed;
                 if (printed.IsFaulted)
                 {
+  
+                    post.Invoice.Printed = false;
                     await _toastService.ShowToastAsync("Erro ao imprimir o cupom.");
                 }
                 else
                 {
-                    var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                     post.Invoice.Printed = true;
-                    invoiceCollection.Update(post.Invoice);
                 }
-
+                invoiceCollection.Update(post.Invoice);
             }
 
             var backofficeReq = BuildBackofficeRequestFromInvoice(post.Invoice);
-            var bo = await SendInvoiceToBackofficeAsync(backofficeReq);
-            if (!bo)
+            var id = await SendInvoiceToBackofficeAsync(backofficeReq);
+            if (id <=0)
             {
                 // Mostra mensagem amigável + log opcional com bo.RawBody
                 await _toastService.ShowToastAsync($"Falha ao enviar para retaguarda");
@@ -781,6 +829,7 @@ public partial class ConsumerSalePage : ContentPage
                 await _toastService.ShowToastAsync("Retaguarda sincronizada.");
                 var invoiceCollection = _db.GetCollection<Invoice>("invoice");
                 post.Invoice.Send = true;
+                post.Invoice.InvoiceBackEndId = id.Value;
                 invoiceCollection.Update(post.Invoice);
             }
 
@@ -878,6 +927,8 @@ public partial class ConsumerSalePage : ContentPage
             NFKey = inv.NfKey,
             NFe = inv.Nfe,
             IssueDate = inv.IssueDate,
+            NFeStatus = inv.NfeStatus,
+            Protocol  = inv.Protocol,
             AuthorizedXml = string.IsNullOrWhiteSpace(inv.AuthorizedXml) ? null : Convert.FromBase64String(inv.AuthorizedXml),
             // usa a série da própria invoice; se vier vazia, cai para a config do PDV
             Serie = inv.Serie,
@@ -892,7 +943,9 @@ public partial class ConsumerSalePage : ContentPage
     }
 
 
-    private async Task<bool> SendInvoiceToBackofficeAsync(BackofficeInvoiceRequest req, CancellationToken ct = default)
+    private async Task<int?> SendInvoiceToBackofficeAsync(
+     BackofficeInvoiceRequest req,
+     CancellationToken ct = default)
     {
         try
         {
@@ -900,11 +953,9 @@ public partial class ConsumerSalePage : ContentPage
 
             using var httpReq = new HttpRequestMessage(HttpMethod.Post, "invoices")
             {
-                Content = new StringContent(
-                    json,
-                    Encoding.UTF8,
-                    "application/json")
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
+
             httpReq.Headers.Accept.Clear();
             httpReq.Headers.Accept.ParseAdd("*/*");
 
@@ -915,24 +966,97 @@ public partial class ConsumerSalePage : ContentPage
                 var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                 Console.WriteLine($"[Backoffice] FAIL -> Status: {(int)resp.StatusCode} {resp.ReasonPhrase}");
                 Console.WriteLine($"[Backoffice] Body: {body}");
+                return null;
+            }
+
+            // ✅ LÊ O HEADER LOCATION
+            if (!resp.Headers.Location?.IsAbsoluteUri ?? true)
+            {
+                var location = resp.Headers.Location?.ToString();
+                // Ex: "invoices/12345"
+                if (!string.IsNullOrWhiteSpace(location))
+                {
+                    var parts = location.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    if (int.TryParse(parts.Last(), out var invoiceId))
+                    {
+                        return invoiceId;
+                    }
+                }
+            }
+
+            // Fallback se por algum motivo não veio no header
+            Console.WriteLine("[Backoffice] WARNING: Location header não retornou o InvoiceId");
+            return null;
+        }
+        catch (TaskCanceledException tex) when (!ct.IsCancellationRequested)
+        {
+            Console.WriteLine($"[Backoffice] TIMEOUT: {tex.Message}");
+            return null;
+        }
+        catch (HttpRequestException hex)
+        {
+            Console.WriteLine($"[Backoffice] NETWORK ERROR: {hex.Message}");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Backoffice] UNEXPECTED ERROR: {ex}");
+            return null;
+        }
+    }
+
+
+    private async Task<bool> SendInvoiceCancelToBackofficeAsync(
+    int invoiceId,
+    BackofficeInvoiceCancelRequest req,
+    CancellationToken ct = default)
+    {
+        try
+        {
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(req);
+
+            using var httpReq = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"invoices/{invoiceId}/cancel")
+            {
+                Content = new StringContent(
+                    json,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+
+            httpReq.Headers.Accept.Clear();
+            httpReq.Headers.Accept.ParseAdd("*/*");
+
+            using var resp = await _http.SendAsync(httpReq, ct).ConfigureAwait(false);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                Console.WriteLine($"[Backoffice Cancel] FAIL -> Status: {(int)resp.StatusCode} {resp.ReasonPhrase}");
+                Console.WriteLine($"[Backoffice Cancel] Body: {body}");
                 return false;
             }
+
+            // Se quiser inspecionar a resposta de sucesso:
+            // var successBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            // Console.WriteLine($"[Backoffice Cancel] OK -> {successBody}");
 
             return true;
         }
         catch (TaskCanceledException tex) when (!ct.IsCancellationRequested)
         {
-            Console.WriteLine($"[Backoffice] TIMEOUT: {tex.Message}");
+            Console.WriteLine($"[Backoffice Cancel] TIMEOUT: {tex.Message}");
             return false;
         }
         catch (HttpRequestException hex)
         {
-            Console.WriteLine($"[Backoffice] NETWORK ERROR: {hex.Message}");
+            Console.WriteLine($"[Backoffice Cancel] NETWORK ERROR: {hex.Message}");
             return false;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Backoffice] UNEXPECTED ERROR: {ex}");
+            Console.WriteLine($"[Backoffice Cancel] UNEXPECTED ERROR: {ex}");
             return false;
         }
     }
@@ -975,12 +1099,13 @@ public partial class ConsumerSalePage : ContentPage
                         .ToList();
                     var backReq = BuildBackofficeRequestFromInvoice(inv);
 
-                    var ok = await SendInvoiceToBackofficeAsync(backReq);
+                    var id = await SendInvoiceToBackofficeAsync(backReq);
 
-                    if (ok)
+                    if (id > 0)
                     {
                         // só marca como enviado se o backoffice confirmou (ou se a chamada HTTP foi 2xx)
                         inv.Send = true;
+                        inv.InvoiceBackEndId = id.Value;
 
                         invoiceCol.Update(inv);
                         successCount++;
@@ -1949,7 +2074,20 @@ public partial class ConsumerSalePage : ContentPage
 
                 _db.GetCollection<Invoice>("invoice").Update(nota);
 
-                await DisplayAlert("OK", "Cupom cancelado com sucesso!", "OK");
+                _ = _toastService.ShowToastAsync("Cupom cancelado com sucesso!");
+
+                var x =  await SendInvoiceCancelToBackofficeAsync(nota.InvoiceBackEndId, new BackofficeInvoiceCancelRequest { CancelXml = nota.CanceledXml, Protocol = nota.Protocol, Reason = "" });
+                if( x )
+                {
+                    var invoiceCollection = _db.GetCollection<Invoice>("invoice");
+                    nota.SendCancel = true;
+                    invoiceCollection.Update(nota);
+                    await _toastService.ShowToastAsync("Nota enviada com sucesso.");
+                }
+                else
+                {
+                    await _toastService.ShowToastAsync($"Falha ao enviar cancelamento ao Backoffice");
+                }
 
                 // ✅ AGORA SIM FECHA A TELA
                 await Navigation.PopAsync();

@@ -89,8 +89,8 @@ namespace Inovesys.Retail.Services
                 Invoice = new Invoice
                 {
                     ClientId = _branche.ClientId,
-                    InvoiceId = numberControl.LastNumber,
                     InvoiceTypeId = _invoicePostDto.InvoiceTypeId,
+                    InvoiceId = nextNumber,
                     CompanyId = _invoicePostDto.CompanyId,
                     BrancheId = _invoicePostDto.BrancheId,
                     IssueDate = DateTime.UtcNow,

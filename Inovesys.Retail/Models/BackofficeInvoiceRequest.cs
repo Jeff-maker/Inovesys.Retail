@@ -1,4 +1,6 @@
 ﻿
+using LiteDB;
+
 namespace Inovesys.Retail.Models
 {
     public sealed class BackofficeInvoiceRequest
@@ -36,5 +38,15 @@ namespace Inovesys.Retail.Models
 
         [Newtonsoft.Json.JsonProperty("authorizedXml")]
         public byte[] AuthorizedXml { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("nfeStatus")]
+        public string NFeStatus { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("protocol")]
+
+        public string Protocol { get; set; }
+
+
+
     }
 }

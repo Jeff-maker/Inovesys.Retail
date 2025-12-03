@@ -6,7 +6,7 @@ namespace Inovesys.Retail.Entities
     public class Invoice
     {
         [BsonId]
-        public string CompositeKey => ClientId + "-" + InvoiceId;
+        public string CompositeKey => ClientId + "-" + Nfe + "-" + Serie;
 
         [BsonField("client_id")]
         public int? ClientId { get; set; }
@@ -91,6 +91,12 @@ namespace Inovesys.Retail.Entities
 
         [BsonField("canceled_xml")]
         public string CanceledXml { get; set; }
+
+        [BsonField("sent_cancel")]
+        public bool SendCancel { get; set; }
+
+        [BsonField("Invoice_backend_id")]
+        public int InvoiceBackEndId { get; set; }
 
 
     }
